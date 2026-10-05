@@ -2,15 +2,28 @@ openapi: 3.1.0
 info:
   title: Green Way Motors API
   version: 0.3.0
-  description: Implemented backend contract. The MVP roadmap is maintained separately in greenway-motors-mvp.openapi.yaml.
+  description: Implemented backend contract. GreenWay_Backend_Master_Spec_v1.md is the product and API roadmap.
 servers:
   - url: http://localhost:4000
     description: Local development
 tags:
   - name: Health
-  - name: Public
+  - name: Markets
+  - name: Catalog
+  - name: Vehicles
   - name: Auth
-  - name: Admin RBAC
+  - name: Uploads
+  - name: Admin - Inventory Sources
+  - name: Admin - Vehicles
+  - name: Admin - Markets
+  - name: Admin - Costing
+  - name: Sales - Leads
+  - name: Sales - Follow-ups
+  - name: Sales - Quotes
+  - name: Sales - Reservations
+  - name: Sales - Deals
+  - name: Sales - Fulfillment
+  - name: RBAC
 paths:
   /health/live:
     get:
@@ -27,19 +40,34 @@ paths:
         '503': { $ref: '#/components/responses/Problem' }
   /api/v1/countries:
     get:
-      tags: [Public]
+      tags: [Markets]
       operationId: listCountries
       responses:
         '200': { description: Active countries. }
+  /api/v1/markets:
+    get:
+      tags: [Markets]
+      operationId: listMarkets
+      responses:
+        '200': { description: Active destination markets and countries. }
+  /api/v1/markets/{marketSlug}:
+    get:
+      tags: [Markets]
+      operationId: getMarket
+      parameters:
+        - { name: marketSlug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Active destination market metadata. }
+        '404': { $ref: '#/components/responses/Problem' }
   /api/v1/catalog/makes:
     get:
-      tags: [Public]
+      tags: [Catalog]
       operationId: listMakes
       responses:
         '200': { description: Active makes. }
   /api/v1/catalog/models:
     get:
-      tags: [Public]
+      tags: [Catalog]
       operationId: listModels
       parameters:
         - name: makeId
@@ -47,33 +75,94 @@ paths:
           schema: { type: integer, minimum: 1 }
       responses:
         '200': { description: Active models. }
+  /api/v1/catalog/makes/{makeId}/models:
+    get:
+      tags: [Catalog]
+      operationId: listModelsForMake
+      parameters:
+        - { name: makeId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Active models for a make. }
+        '422': { $ref: '#/components/responses/Problem' }
   /api/v1/catalog/body-types:
     get:
-      tags: [Public]
+      tags: [Catalog]
       operationId: listBodyTypes
       responses:
         '200': { description: Vehicle body types. }
   /api/v1/catalog/features:
     get:
-      tags: [Public]
+      tags: [Catalog]
       operationId: listFeatures
       responses:
         '200': { description: Vehicle features. }
   /api/v1/vehicles:
     get:
-      tags: [Public]
+      tags: [Vehicles]
       operationId: listPublishedVehicles
       parameters:
+        - {
+            name: market,
+            in: query,
+            required: true,
+            description: Active destination market slug.,
+            schema: { type: string }
+          }
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100 }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: makeId, in: query, schema: { type: integer } }
+        - { name: modelId, in: query, schema: { type: integer } }
+        - { name: bodyTypeId, in: query, schema: { type: integer } }
+        - { name: condition, in: query, schema: { type: string, enum: [new, used] } }
+        - { name: yearFrom, in: query, schema: { type: integer } }
+        - { name: yearTo, in: query, schema: { type: integer } }
+        - { name: mileageFrom, in: query, schema: { type: integer } }
+        - { name: mileageTo, in: query, schema: { type: integer } }
+        - { name: engineCcFrom, in: query, schema: { type: integer } }
+        - { name: engineCcTo, in: query, schema: { type: integer } }
+        - {
+            name: fuel,
+            in: query,
+            description: Comma-separated or repeated enum values.,
+            schema: { type: string }
+          }
+        - { name: transmission, in: query, schema: { type: string } }
+        - { name: drive, in: query, schema: { type: string } }
+        - { name: steering, in: query, schema: { type: string } }
+        - { name: stockCountryId, in: query, schema: { type: integer } }
+        - {
+            name: featureIds,
+            in: query,
+            description: Comma-separated feature IDs.,
+            schema: { type: string }
+          }
+        - {
+            name: sort,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum: [newest, oldest, year_desc, year_asc, mileage_asc, mileage_desc]
+              }
+          }
       responses:
-        '200': { description: Published vehicles. }
+        '200': { $ref: '#/components/responses/PublicVehicles' }
+        '422': { $ref: '#/components/responses/Problem' }
   /api/v1/vehicles/{referenceNo}:
     get:
-      tags: [Public]
+      tags: [Vehicles]
       operationId: getPublishedVehicle
       parameters:
+        - {
+            name: market,
+            in: query,
+            required: true,
+            description: Active destination market slug.,
+            schema: { type: string }
+          }
         - {
             name: referenceNo,
             in: path,
@@ -81,8 +170,9 @@ paths:
             schema: { type: string, pattern: '^GW-[0-9]+$' }
           }
       responses:
-        '200': { description: A published vehicle. }
+        '200': { $ref: '#/components/responses/PublicVehicle' }
         '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
   /api/v1/auth/customers/register:
     post:
       tags: [Auth]
@@ -234,14 +324,14 @@ paths:
         '422': { $ref: '#/components/responses/Problem' }
   /api/v1/admin/roles:
     get:
-      tags: [Admin RBAC]
+      tags: [RBAC]
       operationId: listRoles
       security: [{ bearerAuth: [] }]
       responses:
         '200': { description: Roles with their permissions. }
         '403': { $ref: '#/components/responses/Problem' }
     post:
-      tags: [Admin RBAC]
+      tags: [RBAC]
       operationId: createRole
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -254,7 +344,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /api/v1/admin/roles/{id}:
     patch:
-      tags: [Admin RBAC]
+      tags: [RBAC]
       operationId: updateRole
       security: [{ bearerAuth: [] }]
       parameters:
@@ -264,7 +354,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /api/v1/admin/permissions:
     get:
-      tags: [Admin RBAC]
+      tags: [RBAC]
       operationId: listPermissions
       security: [{ bearerAuth: [] }]
       responses:
@@ -272,7 +362,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /api/v1/admin/roles/{id}/permissions:
     put:
-      tags: [Admin RBAC]
+      tags: [RBAC]
       operationId: replaceRolePermissions
       security: [{ bearerAuth: [] }]
       parameters:
@@ -287,7 +377,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /api/v1/admin/users/{userId}/roles:
     put:
-      tags: [Admin RBAC]
+      tags: [RBAC]
       operationId: replaceStaffUserRoles
       security: [{ bearerAuth: [] }]
       parameters:
@@ -300,7 +390,1139 @@ paths:
       responses:
         '204': { description: Staff roles replaced and audited. }
         '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/inventory-sources:
+    get:
+      tags: [Admin - Inventory Sources]
+      operationId: adminListInventorySources
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Page' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Admin - Inventory Sources]
+      operationId: adminCreateInventorySource
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/InventorySourceInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/inventory-sources/{id}:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Inventory Sources]
+      operationId: adminGetInventorySource
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Admin - Inventory Sources]
+      operationId: adminUpdateInventorySource
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/InventorySourcePatch' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/inventory-sources/{id}/activate:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Inventory Sources]
+      operationId: adminActivateInventorySource
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/inventory-sources/{id}/deactivate:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Inventory Sources]
+      operationId: adminDeactivateInventorySource
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/inventory-sources/{id}/block:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Inventory Sources]
+      operationId: adminBlockInventorySource
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/inventory-sources/{id}/vehicles:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Inventory Sources]
+      operationId: adminListSourceVehicles
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/markets:
+    get:
+      tags: [Admin - Markets]
+      operationId: adminListMarkets
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
+      responses: { '200': { $ref: '#/components/responses/Page' } }
+    post:
+      tags: [Admin - Markets]
+      operationId: adminCreateMarket
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MarketInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/markets/{id}:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Markets]
+      operationId: adminGetMarket
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    patch:
+      tags: [Admin - Markets]
+      operationId: adminUpdateMarket
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MarketPatch' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/markets/{id}/activate:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Markets]
+      operationId: adminActivateMarket
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/markets/{id}/deactivate:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Markets]
+      operationId: adminDeactivateMarket
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles:
+    get:
+      tags: [Admin - Vehicles]
+      operationId: adminListVehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: availabilityStatus, in: query, schema: { type: string } }
+      responses: { '200': { $ref: '#/components/responses/Page' } }
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminCreateVehicle
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VehicleInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Vehicles]
+      operationId: adminGetVehicle
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Admin - Vehicles]
+      operationId: adminUpdateVehicle
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VehiclePatch' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [Admin - Vehicles]
+      operationId: adminSoftDeleteVehicle
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Vehicle archived and soft deleted. }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}/restore:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminRestoreVehicle
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles/{id}/publish:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminPublishVehicle
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}/unpublish:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminUnpublishVehicle
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles/{id}/archive:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminArchiveVehicle
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles/{id}/mark-unavailable:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminMarkVehicleUnavailable
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles/{id}/mark-available:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminMarkVehicleAvailable
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles/{id}/mark-sold:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Admin - Vehicles]
+      operationId: adminMarkVehicleSold
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/admin/vehicles/{id}/features:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Vehicles]
+      operationId: adminGetVehicleFeatures
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    put:
+      tags: [Admin - Vehicles]
+      operationId: adminReplaceVehicleFeatures
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FeatureIdsInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}/markets:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Markets]
+      operationId: adminGetVehicleMarkets
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    put:
+      tags: [Admin - Markets]
+      operationId: adminReplaceVehicleMarkets
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/VehicleMarketsInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}/costing:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Admin - Costing]
+      operationId: adminGetVehicleCosting
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '403': { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [Admin - Costing]
+      operationId: adminReplaceVehicleCosting
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/VehicleCostingInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/uploads/presign:
+    post:
+      tags: [Uploads]
+      operationId: adminPresignUpload
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/PresignUploadInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/uploads/complete:
+    post:
+      tags: [Uploads]
+      operationId: adminCompleteUpload
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/CompleteUploadInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}/media:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    get:
+      tags: [Uploads]
+      operationId: adminListVehicleMedia
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    post:
+      tags: [Uploads]
+      operationId: adminAttachVehicleMedia
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MediaAttachInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/vehicles/{id}/media/{mediaId}:
+    parameters:
+      - { $ref: '#/components/parameters/UuidId' }
+      - { name: mediaId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [Uploads]
+      operationId: adminUpdateVehicleMedia
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MediaPatchInput' } } }
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    delete:
+      tags: [Uploads]
+      operationId: adminDeleteVehicleMedia
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Media detached. } }
+  /api/v1/admin/vehicles/{id}/media/reorder:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Uploads]
+      operationId: adminReorderVehicleMedia
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/MediaReorderInput' } } }
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/leads:
+    post:
+      tags: [Sales - Leads]
+      operationId: createGetQuoteLead
+      description: Guest Get Quote request. The server snapshots the eligible vehicle; supplier and cost fields are rejected.
+      security: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeadCreateInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/LeadReceipt' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/leads:
+    get:
+      tags: [Sales - Leads]
+      operationId: staffListLeads
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: assignedTo, in: query, schema: { type: string, format: uuid } }
+        - { name: unassigned, in: query, schema: { type: boolean } }
+        - { name: marketId, in: query, schema: { type: string, format: uuid } }
+        - { name: destinationCountryId, in: query, schema: { type: integer } }
+        - { name: customerCountryId, in: query, schema: { type: integer } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: utmSource, in: query, schema: { type: string } }
+        - { name: vehicleReference, in: query, schema: { type: string } }
+        - { name: createdFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: createdTo, in: query, schema: { type: string, format: date-time } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Page' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/leads/{referenceNo}:
+    parameters:
+      - {
+          name: referenceNo,
+          in: path,
+          required: true,
+          schema: { type: string, pattern: '^LEAD-[0-9]+$' }
+        }
+    get:
+      tags: [Sales - Leads]
+      operationId: staffGetLead
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/leads/{referenceNo}/assign:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Sales - Leads]
+      operationId: staffAssignLead
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeadAssignInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/leads/{referenceNo}/status:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Sales - Leads]
+      operationId: staffTransitionLead
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeadStatusInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/leads/{referenceNo}/qualification:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Sales - Leads]
+      operationId: staffUpdateLeadQualification
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/LeadQualificationInput' } } }
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/staff/leads/{referenceNo}/mark-lost:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Sales - Leads]
+      operationId: staffMarkLeadLost
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeadLostInput' } } }
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/staff/leads/{referenceNo}/reopen:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Sales - Leads]
+      operationId: staffReopenLead
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/staff/leads/{referenceNo}/related:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Sales - Leads]
+      operationId: staffGetRelatedLeads
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/staff/leads/{referenceNo}/activities:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Sales - Leads]
+      operationId: staffListLeadActivities
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    post:
+      tags: [Sales - Leads]
+      operationId: staffCreateLeadActivity
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/ManualActivityInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/leads/{referenceNo}/followups:
+    parameters:
+      - { name: referenceNo, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Sales - Follow-ups]
+      operationId: staffCreateFollowup
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/FollowupCreateInput' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Data' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/followups:
+    get:
+      tags: [Sales - Follow-ups]
+      operationId: staffListFollowups
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { name: assignedTo, in: query, schema: { type: string, format: uuid } }
+        - { name: dueBefore, in: query, schema: { type: string, format: date-time } }
+        - { name: dueAfter, in: query, schema: { type: string, format: date-time } }
+        - { name: status, in: query, schema: { type: string, enum: [open, completed] } }
+      responses: { '200': { $ref: '#/components/responses/Page' } }
+  /api/v1/staff/followups/{id}/complete:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Sales - Follow-ups]
+      operationId: staffCompleteFollowup
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Data' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/staff/followups/{id}:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    patch:
+      tags: [Sales - Follow-ups]
+      operationId: staffUpdateFollowup
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/FollowupPatchInput' } } }
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+    delete:
+      tags: [Sales - Follow-ups]
+      operationId: staffDeleteFollowup
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Pending follow-up deleted. } }
+  /api/v1/staff/followups/{id}/reopen:
+    parameters: [{ $ref: '#/components/parameters/UuidId' }]
+    post:
+      tags: [Sales - Follow-ups]
+      operationId: staffReopenFollowup
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/Data' } }
+  /api/v1/staff/quotes:
+    get:
+      tags: [Sales - Quotes]
+      operationId: listQuotes
+      description: Requires quote.read_all or quote.read_assigned; assignment scope applies.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Limit' },
+          {
+            name: status,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum: [draft, sent, accepted, rejected, expired, superseded, cancelled]
+              }
+          }
+        ]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Page' },
+          '401': { $ref: '#/components/responses/Problem' },
+          '403': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/leads/{referenceNo}/quotes:
+    post:
+      tags: [Sales - Quotes]
+      operationId: createQuote
+      description: Requires quote.create and lead assignment access. Creates a draft for a qualified lead.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: referenceNo,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^LEAD-\d+$' }
+          }
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/CreateQuoteInput' } } }
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/Data' },
+          '401': { $ref: '#/components/responses/Problem' },
+          '403': { $ref: '#/components/responses/Problem' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}:
+    parameters:
+      [{ name: quoteRef, in: path, required: true, schema: { type: string, pattern: '^Q-\d+$' } }]
+    get:
+      tags: [Sales - Quotes]
+      operationId: getQuote
+      description: Requires quote.read_all or quote.read_assigned. Internal totals and margin require quote.cost.read.
+      security: [{ bearerAuth: [] }]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '401': { $ref: '#/components/responses/Problem' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+    patch:
+      tags: [Sales - Quotes]
+      operationId: updateQuote
+      description: Requires quote.update. Draft validity metadata only.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/UpdateQuoteInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '403': { $ref: '#/components/responses/Problem' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/versions:
+    parameters:
+      [{ name: quoteRef, in: path, required: true, schema: { type: string, pattern: '^Q-\d+$' } }]
+    post:
+      tags: [Sales - Quotes]
+      operationId: createQuoteVersion
+      description: Requires quote.update. Requires quote.cost.input to submit nonzero additional internal cost. Uses integer minor units; internal totals and margin are computed by the server. Revisions append immutable versions.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json: { schema: { $ref: '#/components/schemas/CreateQuoteVersionInput' } }
+            }
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/Data' },
+          '403': { $ref: '#/components/responses/Problem' },
+          '409': { $ref: '#/components/responses/Problem' },
+          '422': { $ref: '#/components/responses/Problem' }
+        }
+    get:
+      tags: [Sales - Quotes]
+      operationId: listQuoteVersions
+      description: Requires quote.read_all or quote.read_assigned. Internal fields are permission-filtered.
+      security: [{ bearerAuth: [] }]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/versions/{versionNo}:
+    get:
+      tags: [Sales - Quotes]
+      operationId: getQuoteVersion
+      description: Requires quote.read_all or quote.read_assigned; costs require quote.cost.read.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: quoteRef,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^Q-\d+$' }
+          },
+          { name: versionNo, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        ]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/send:
+    post:
+      tags: [Sales - Quotes]
+      operationId: sendQuote
+      description: Requires quote.send. Records dispatch and synchronizes the lead. Idempotency-Key required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: quoteRef,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^Q-\d+$' }
+          },
+          { $ref: '#/components/parameters/IdempotencyKey' }
+        ]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object, additionalProperties: false } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/accept:
+    post:
+      tags: [Sales - Quotes]
+      operationId: acceptQuoteAndConvert
+      description: Requires quote.accept. Accepts only the current unexpired sent version and atomically reserves its exact vehicle, marks the lead won, and creates one deal. Idempotency-Key required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: quoteRef,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^Q-\d+$' }
+          },
+          { $ref: '#/components/parameters/IdempotencyKey' }
+        ]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object, additionalProperties: false } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/reject:
+    post:
+      tags: [Sales - Quotes]
+      operationId: rejectQuote
+      description: Requires quote.reject; sent quotes only.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [{ name: quoteRef, in: path, required: true, schema: { type: string, pattern: '^Q-\d+$' } }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/QuoteReasonInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/cancel:
+    post:
+      tags: [Sales - Quotes]
+      operationId: cancelQuote
+      description: Requires quote.cancel; draft, sent, or rejected quotes only.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [{ name: quoteRef, in: path, required: true, schema: { type: string, pattern: '^Q-\d+$' } }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/QuoteReasonInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/expire:
+    post:
+      tags: [Sales - Quotes]
+      operationId: expireQuote
+      description: Requires quote.expire; sent quote must be past server-recorded validity.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [{ name: quoteRef, in: path, required: true, schema: { type: string, pattern: '^Q-\d+$' } }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/QuoteReasonInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/quotes/{quoteRef}/preview:
+    get:
+      tags: [Sales - Quotes]
+      operationId: previewQuote
+      description: Requires quote.read_all or quote.read_assigned. Customer-safe projection has no cost, source, margin, or internal notes.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [{ name: quoteRef, in: path, required: true, schema: { type: string, pattern: '^Q-\d+$' } }]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/vehicles/{vehicleId}/reservations:
+    post:
+      tags: [Sales - Reservations]
+      operationId: reserveVehicle
+      description: Requires deal.reserve or deal.manage. Row locks and active-reservation uniqueness protect the exact vehicle. Idempotency-Key required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } },
+          { $ref: '#/components/parameters/IdempotencyKey' }
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json: { schema: { $ref: '#/components/schemas/CreateReservationInput' } }
+            }
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' },
+          '422': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/vehicles/{vehicleId}/reservation:
+    get:
+      tags: [Sales - Reservations]
+      operationId: getVehicleReservation
+      description: Requires deal.read_all or deal.read_assigned; assigned scope applies.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [{ name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/reservations/{id}/release:
+    post:
+      tags: [Sales - Reservations]
+      operationId: releaseReservation
+      description: Requires deal.reserve or deal.manage. Holds for active deals cannot be released.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UuidId' }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/QuoteReasonInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/reservations/{id}/extend:
+    post:
+      tags: [Sales - Reservations]
+      operationId: extendReservation
+      description: Requires deal.reserve or deal.manage. Active, unexpired holds only; maximum fourteen days from now.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UuidId' }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json: { schema: { $ref: '#/components/schemas/ExtendReservationInput' } }
+            }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' },
+          '422': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deals:
+    get:
+      tags: [Sales - Deals]
+      operationId: listDeals
+      description: Requires deal.read_all or deal.read_assigned. Financial fields require quote.cost.read.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Limit' },
+          {
+            name: status,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum:
+                  [
+                    source_confirming,
+                    source_confirmed,
+                    processing,
+                    ready_for_delivery,
+                    completed,
+                    cancelled
+                  ]
+              }
+          }
+        ]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Page' },
+          '401': { $ref: '#/components/responses/Problem' },
+          '403': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/leads/{referenceNo}/deal:
+    post:
+      tags: [Sales - Deals]
+      operationId: createOrGetDeal
+      description: Requires deal.manage or deal.reserve. Returns an existing conversion or converts an accepted quote exactly once. Idempotency-Key required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: referenceNo,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^LEAD-\d+$' }
+          },
+          { $ref: '#/components/parameters/IdempotencyKey' }
+        ]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object, additionalProperties: false } } }
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deals/{dealRef}:
+    parameters:
+      [{ name: dealRef, in: path, required: true, schema: { type: string, pattern: '^DEAL-\d+$' } }]
+    get:
+      tags: [Sales - Deals]
+      operationId: getDeal
+      description: Requires deal.read_all or deal.read_assigned. Source snapshot/costs require quote.cost.read.
+      security: [{ bearerAuth: [] }]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+    patch:
+      tags: [Sales - Deals]
+      operationId: updateDeal
+      description: Requires deal.update or deal.manage. Commercial snapshots are immutable.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/UpdateDealInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deals/{dealRef}/status:
+    patch:
+      tags: [Sales - Deals]
+      operationId: transitionDeal
+      description: Requires deal.update or deal.manage. Progression is source_confirming → source_confirmed → processing → ready_for_delivery.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: dealRef,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^DEAL-\d+$' }
+          }
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/DealStatusInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deals/{dealRef}/cancel:
+    post:
+      tags: [Sales - Deals]
+      operationId: cancelDeal
+      description: Requires deal.cancel or deal.manage. A reason is required; active reservation is released.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: dealRef,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^DEAL-\d+$' }
+          }
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/QuoteReasonInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deals/{dealRef}/complete:
+    post:
+      tags: [Sales - Deals]
+      operationId: completeDeal
+      description: Requires deal.complete or deal.manage. Atomically completes the deal, marks the exact vehicle sold, and converts the reservation. Idempotency-Key required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        [
+          {
+            name: dealRef,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^DEAL-\d+$' }
+          },
+          { $ref: '#/components/parameters/IdempotencyKey' }
+        ]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object, additionalProperties: false } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deals/{dealRef}/tasks:
+    parameters:
+      [{ name: dealRef, in: path, required: true, schema: { type: string, pattern: '^DEAL-\d+$' } }]
+    get:
+      tags: [Sales - Fulfillment]
+      operationId: listDealTasks
+      description: Requires deal.read_all or deal.read_assigned; assigned scope applies.
+      security: [{ bearerAuth: [] }]
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
+    post:
+      tags: [Sales - Fulfillment]
+      operationId: createDealTask
+      description: Requires deal.task.manage or deal.manage.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/CreateDealTaskInput' } } }
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deal-tasks/{id}:
+    patch:
+      tags: [Sales - Fulfillment]
+      operationId: updateDealTask
+      description: Requires deal.task.manage or deal.manage.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UuidId' }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/UpdateDealTaskInput' } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '409': { $ref: '#/components/responses/Problem' }
+        }
+  /api/v1/staff/deal-tasks/{id}/complete:
+    post:
+      tags: [Sales - Fulfillment]
+      operationId: completeDealTask
+      description: Requires deal.task.manage or deal.manage. Repeated completion is idempotent.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UuidId' }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { type: object, additionalProperties: false } } }
+        }
+      responses:
+        {
+          '200': { $ref: '#/components/responses/Data' },
+          '404': { $ref: '#/components/responses/Problem' }
+        }
 components:
+  parameters:
+    UuidId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 200 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
   securitySchemes:
     bearerAuth:
       type: http
@@ -311,12 +1533,484 @@ components:
       in: cookie
       name: greenway_refresh_token
   responses:
+    PublicVehicle:
+      description: Published, available vehicle eligible for the selected destination market. Source and cost fields are absent.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data, meta]
+            properties:
+              data: { $ref: '#/components/schemas/PublicVehicle' }
+              meta: { $ref: '#/components/schemas/RequestMeta' }
+    PublicVehicles:
+      description: Market-eligible published and available vehicles.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data, meta]
+            properties:
+              data: { type: array, items: { $ref: '#/components/schemas/PublicVehicle' } }
+              meta: { type: object, additionalProperties: true }
+    LeadReceipt:
+      description: Guest Get Quote request recorded. Idempotent retry returns the same reference.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data, meta]
+            properties:
+              data: { $ref: '#/components/schemas/LeadReceipt' }
+              meta: { $ref: '#/components/schemas/RequestMeta' }
+    Data:
+      description: Permission-scoped data with request ID metadata.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DataEnvelope' }
+    Page:
+      description: Cursor-paginated permission-scoped collection.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PageEnvelope' }
     Problem:
       description: RFC 9457 problem details.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    CreateQuoteInput:
+      type: object
+      additionalProperties: false
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$', example: PKR }
+    UpdateQuoteInput:
+      type: object
+      additionalProperties: false
+      properties:
+        validUntil: { type: [string, 'null'], format: date-time }
+    CreateQuoteVersionInput:
+      type: object
+      additionalProperties: false
+      required: [validUntil]
+      properties:
+        otherInternalCostMinor:
+          {
+            type: integer,
+            minimum: 0,
+            default: 0,
+            description: Internal cost input in the quote currency's minor unit.
+          }
+        markupBps:
+          {
+            type: integer,
+            minimum: 0,
+            maximum: 1000000,
+            default: 0,
+            description: Markup rate in basis points; amount is computed server-side.
+          }
+        validUntil: { type: string, format: date-time }
+        terms: { type: [string, 'null'], maxLength: 8000 }
+        customerNotes: { type: [string, 'null'], maxLength: 4000 }
+        internalNotes: { type: [string, 'null'], maxLength: 4000 }
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, label, quantity, unitAmountMinor]
+            properties:
+              kind:
+                {
+                  type: string,
+                  enum:
+                    [freight, inspection, insurance, documentation, service, tax, discount, other]
+                }
+              label: { type: string, minLength: 1, maxLength: 200 }
+              quantity: { type: integer, minimum: 1, maximum: 10000 }
+              unitAmountMinor:
+                { type: integer, description: Signed integer minor units; discounts are negative. }
+    QuoteReasonInput:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    CreateReservationInput:
+      type: object
+      additionalProperties: false
+      required: [leadReferenceNo]
+      properties:
+        leadReferenceNo: { type: string, pattern: '^LEAD-\d+$' }
+        quoteReferenceNo: { type: string, pattern: '^Q-\d+$' }
+        expiresInHours: { type: integer, minimum: 1, maximum: 168, default: 24 }
+    ExtendReservationInput:
+      type: object
+      additionalProperties: false
+      required: [extendByHours]
+      properties:
+        extendByHours: { type: integer, minimum: 1, maximum: 168 }
+    UpdateDealInput:
+      type: object
+      additionalProperties: false
+      properties:
+        internalNotes: { type: [string, 'null'], maxLength: 8000 }
+        sourceConfirmationReference: { type: [string, 'null'], maxLength: 200 }
+    DealStatusInput:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          {
+            type: string,
+            enum: [source_confirming, source_confirmed, processing, ready_for_delivery]
+          }
+        sourceConfirmationReference: { type: string, maxLength: 200 }
+    CreateDealTaskInput:
+      type: object
+      additionalProperties: false
+      required: [taskType]
+      properties:
+        taskType: { type: string, minLength: 1, maxLength: 80, example: Prepare delivery pack }
+        assignedTo: { type: [string, 'null'], format: uuid }
+        dueAt: { type: [string, 'null'], format: date-time }
+        notes: { type: [string, 'null'], maxLength: 4000 }
+    UpdateDealTaskInput:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [open, in_progress, cancelled] }
+        assignedTo: { type: [string, 'null'], format: uuid }
+        dueAt: { type: [string, 'null'], format: date-time }
+        notes: { type: [string, 'null'], maxLength: 4000 }
+    PublicVehicle:
+      type: object
+      additionalProperties: false
+      required: [referenceNo, title, condition, year, make, model, stockCountry]
+      properties:
+        referenceNo: { type: string }
+        title: { type: string }
+        condition: { type: string, enum: [new, used] }
+        variant: { type: [string, 'null'] }
+        year: { type: integer }
+        mileageKm: { type: [integer, 'null'] }
+        engineCc: { type: [integer, 'null'] }
+        fuel: { type: [string, 'null'] }
+        transmission: { type: [string, 'null'] }
+        drive: { type: [string, 'null'] }
+        steering: { type: [string, 'null'] }
+        seats: { type: [integer, 'null'] }
+        doors: { type: [integer, 'null'] }
+        exteriorColor: { type: [string, 'null'] }
+        interiorColor: { type: [string, 'null'] }
+        stockCity: { type: [string, 'null'] }
+        make: { type: object, additionalProperties: true }
+        model: { type: object, additionalProperties: true }
+        bodyType: { type: [object, 'null'], additionalProperties: true }
+        stockCountry: { type: object, additionalProperties: true }
+        primaryMedia: { type: [object, 'null'], additionalProperties: true }
+        description: { type: [string, 'null'] }
+        media: { type: array, items: { type: object, additionalProperties: true } }
+        features: { type: array, items: { type: object, additionalProperties: true } }
+    LeadReceipt:
+      type: object
+      additionalProperties: false
+      required: [referenceNo, status]
+      properties:
+        referenceNo: { type: string, pattern: '^LEAD-[0-9]+$' }
+        status: { type: string, enum: [new] }
+    DataEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          oneOf:
+            - { type: object, additionalProperties: true }
+            - { type: array, items: { type: object, additionalProperties: true } }
+        meta: { $ref: '#/components/schemas/RequestMeta' }
+    PageEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { type: object, additionalProperties: true } }
+        meta:
+          type: object
+          required: [requestId, pagination]
+          properties:
+            requestId: { type: string }
+            pagination:
+              type: object
+              required: [limit, nextCursor, hasMore]
+              properties:
+                limit: { type: integer }
+                nextCursor: { type: [string, 'null'] }
+                hasMore: { type: boolean }
+    RequestMeta:
+      type: object
+      required: [requestId]
+      properties: { requestId: { type: string } }
+    InventorySourceInput:
+      type: object
+      additionalProperties: false
+      required: [companyName]
+      properties:
+        companyName: { type: string, minLength: 1, maxLength: 200 }
+        sourceCode: { type: [string, 'null'] }
+        countryId: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        contactName: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'] }
+        whatsapp: { type: [string, 'null'] }
+        website: { type: [string, 'null'], format: uri }
+        address: { type: [string, 'null'] }
+        reference: { type: [string, 'null'] }
+        notes: { type: [string, 'null'] }
+        paymentTerms: { type: [string, 'null'] }
+        reliabilityRating: { type: [integer, 'null'], minimum: 1, maximum: 5 }
+        internalNotes: { type: [string, 'null'] }
+    InventorySourcePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        companyName: { type: string, minLength: 1 }
+        sourceCode: { type: [string, 'null'] }
+        countryId: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        contactName: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'] }
+        whatsapp: { type: [string, 'null'] }
+        website: { type: [string, 'null'], format: uri }
+        address: { type: [string, 'null'] }
+        reference: { type: [string, 'null'] }
+        notes: { type: [string, 'null'] }
+        paymentTerms: { type: [string, 'null'] }
+        reliabilityRating: { type: [integer, 'null'] }
+        internalNotes: { type: [string, 'null'] }
+    MarketInput:
+      type: object
+      additionalProperties: false
+      required: [countryId, slug, currencyCode, locale]
+      properties:
+        countryId: { type: integer, minimum: 1 }
+        slug: { type: string, pattern: '^[a-z][a-z0-9-]{1,99}$' }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        locale: { type: string }
+        salesEmail: { type: [string, 'null'], format: email }
+        salesPhone: { type: [string, 'null'] }
+        salesWhatsapp: { type: [string, 'null'] }
+        seoTitle: { type: [string, 'null'] }
+        seoDescription: { type: [string, 'null'] }
+    MarketPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        slug: { type: string }
+        currencyCode: { type: string }
+        locale: { type: string }
+        salesEmail: { type: [string, 'null'], format: email }
+        salesPhone: { type: [string, 'null'] }
+        salesWhatsapp: { type: [string, 'null'] }
+        seoTitle: { type: [string, 'null'] }
+        seoDescription: { type: [string, 'null'] }
+    VehicleInput:
+      type: object
+      additionalProperties: false
+      required: [makeId, modelId, stockCountryId, title, year]
+      properties:
+        makeId: { type: integer, minimum: 1 }
+        modelId: { type: integer, minimum: 1 }
+        stockCountryId: { type: integer, minimum: 1 }
+        title: { type: string, minLength: 1 }
+        year: { type: integer, minimum: 1950, maximum: 2100 }
+        inventorySourceId: { type: [string, 'null'], format: uuid }
+        stockNumber: { type: [string, 'null'] }
+        vin: { type: [string, 'null'] }
+        condition: { type: string, enum: [new, used] }
+        variant: { type: [string, 'null'] }
+        bodyTypeId: { type: [integer, 'null'] }
+        mileageKm: { type: [integer, 'null'] }
+        engineCc: { type: [integer, 'null'] }
+        fuel: { type: [string, 'null'] }
+        transmission: { type: [string, 'null'] }
+        drive: { type: [string, 'null'] }
+        steering: { type: [string, 'null'] }
+        seats: { type: [integer, 'null'] }
+        doors: { type: [integer, 'null'] }
+        exteriorColor: { type: [string, 'null'] }
+        interiorColor: { type: [string, 'null'] }
+        stockCity: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+    VehiclePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        makeId: { type: integer }
+        modelId: { type: integer }
+        stockCountryId: { type: integer }
+        title: { type: string }
+        year: { type: integer }
+        inventorySourceId: { type: [string, 'null'], format: uuid }
+        stockNumber: { type: [string, 'null'] }
+        vin: { type: [string, 'null'] }
+        condition: { type: string, enum: [new, used] }
+        variant: { type: [string, 'null'] }
+        bodyTypeId: { type: [integer, 'null'] }
+        mileageKm: { type: [integer, 'null'] }
+        engineCc: { type: [integer, 'null'] }
+        fuel: { type: [string, 'null'] }
+        transmission: { type: [string, 'null'] }
+        drive: { type: [string, 'null'] }
+        steering: { type: [string, 'null'] }
+        seats: { type: [integer, 'null'] }
+        doors: { type: [integer, 'null'] }
+        exteriorColor: { type: [string, 'null'] }
+        interiorColor: { type: [string, 'null'] }
+        stockCity: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+    FeatureIdsInput:
+      type: object
+      additionalProperties: false
+      required: [featureIds]
+      properties:
+        { featureIds: { type: array, uniqueItems: true, items: { type: integer, minimum: 1 } } }
+    VehicleMarketsInput:
+      type: object
+      additionalProperties: false
+      required: [markets]
+      properties:
+        markets:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [marketId, isActive]
+            properties:
+              marketId: { type: string, format: uuid }
+              isActive: { type: boolean }
+              featured: { type: boolean }
+              priority: { type: integer }
+              availableFrom: { type: [string, 'null'], format: date-time }
+              availableUntil: { type: [string, 'null'], format: date-time }
+              marketNotes: { type: [string, 'null'] }
+    VehicleCostingInput:
+      type: object
+      additionalProperties: false
+      required: [purchaseCostMinor, purchaseCostCurrency, estimatedLocalCostMinor, costNotes]
+      properties:
+        purchaseCostMinor: { type: [string, 'null'], pattern: '^\d{1,18}$' }
+        purchaseCostCurrency: { type: [string, 'null'], pattern: '^[A-Z]{3}$' }
+        estimatedLocalCostMinor: { type: [string, 'null'], pattern: '^\d{1,18}$' }
+        costNotes: { type: [string, 'null'] }
+    PresignUploadInput:
+      type: object
+      additionalProperties: false
+      required: [purpose, mimeType, sizeBytes]
+      properties:
+        purpose: { type: string, enum: [vehicle_media] }
+        mimeType: { type: string, enum: [image/jpeg, image/png, image/webp, video/mp4] }
+        sizeBytes: { type: integer, minimum: 1, maximum: 104857600 }
+    CompleteUploadInput:
+      type: object
+      additionalProperties: false
+      required: [uploadIntentId]
+      properties: { uploadIntentId: { type: string, format: uuid } }
+    MediaAttachInput:
+      type: object
+      additionalProperties: false
+      required: [uploadIntentId]
+      properties:
+        uploadIntentId: { type: string, format: uuid }
+        isPrimary: { type: boolean }
+        sortOrder: { type: integer }
+    MediaPatchInput:
+      type: object
+      additionalProperties: false
+      properties:
+        isPrimary: { type: boolean }
+        sortOrder: { type: integer }
+    MediaReorderInput:
+      type: object
+      additionalProperties: false
+      required: [mediaIds]
+      properties:
+        { mediaIds: { type: array, uniqueItems: true, items: { type: string, format: uuid } } }
+    LeadCreateInput:
+      type: object
+      additionalProperties: false
+      required: [vehicleReferenceNo, marketSlug, contactName, contactEmail, consentGiven]
+      properties:
+        vehicleReferenceNo: { type: string, pattern: '^GW-[0-9]+$' }
+        marketSlug: { type: string }
+        contactName: { type: string, minLength: 1 }
+        contactEmail: { type: string, format: email }
+        contactPhone: { type: [string, 'null'] }
+        contactWhatsapp: { type: [string, 'null'] }
+        preferredContact: { type: [string, 'null'], enum: [email, phone, whatsapp, null] }
+        customerCountryId: { type: [integer, 'null'] }
+        destinationCountryId: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        message: { type: [string, 'null'] }
+        consentGiven: { type: boolean, const: true }
+        marketingConsent: { type: boolean }
+        utmSource: { type: [string, 'null'] }
+        utmMedium: { type: [string, 'null'] }
+        utmCampaign: { type: [string, 'null'] }
+    LeadAssignInput:
+      type: object
+      additionalProperties: false
+      required: [assignedTo]
+      properties: { assignedTo: { type: string, format: uuid } }
+    LeadStatusInput:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          {
+            type: string,
+            enum: [contacted, qualified, quote_preparing, lost, unresponsive, spam, cancelled]
+          }
+        reason: { type: string }
+    ManualActivityInput:
+      type: object
+      additionalProperties: false
+      required: [type, body]
+      properties:
+        type: { type: string, enum: [note, call, email, whatsapp] }
+        body: { type: string, minLength: 1 }
+    FollowupCreateInput:
+      type: object
+      additionalProperties: false
+      required: [dueAt]
+      properties:
+        dueAt: { type: string, format: date-time }
+        note: { type: [string, 'null'] }
+        assignedTo: { type: string, format: uuid }
+    FollowupPatchInput:
+      type: object
+      additionalProperties: false
+      properties:
+        dueAt: { type: string, format: date-time }
+        note: { type: [string, 'null'] }
+        assignedTo: { type: string, format: uuid }
+    LeadQualificationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        qualificationNotes: { type: [string, 'null'] }
+        customerLanguage: { type: [string, 'null'] }
+        destinationPort: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+    LeadLostInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+        reasonCode: { type: string }
     Problem:
       type: object
       required: [type, title, status, code, requestId]

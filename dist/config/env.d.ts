@@ -6,6 +6,7 @@ declare const environmentSchema: z.ZodObject<{
         production: "production";
     }>>;
     PORT: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    TRUST_PROXY_HOPS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
     DATABASE_URL: z.ZodURL;
     DATABASE_POOL_MAX: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
     DATABASE_CONNECTION_TIMEOUT_MS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;

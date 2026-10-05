@@ -60,6 +60,14 @@ async function createFixture() {
     "INSERT INTO countries (iso2, iso3, name) VALUES ('GW', 'GWM', $1) RETURNING id",
     [`Country ${suffix}`]
   );
+  const destination = await pool.query<{ id: number }>(
+    "INSERT INTO countries (iso2, iso3, name) VALUES ('PK', 'PAK', $1) RETURNING id",
+    [`Destination ${suffix}`]
+  );
+  const market = await pool.query<{ id: string }>(
+    "INSERT INTO markets (country_id, slug, status, currency_code, locale) VALUES ($1, $2, 'active', 'PKR', 'en-PK') RETURNING id",
+    [destination.rows[0]!.id, `pakistan-${suffix}`]
+  );
   const make = await pool.query<{ id: number }>(
     'INSERT INTO makes (name, slug) VALUES ($1, $2) RETURNING id',
     [`Make ${suffix}`, `make-${suffix}`]
@@ -76,6 +84,17 @@ async function createFixture() {
     `INSERT INTO vehicles (make_id, model_id, year, mileage_km, stock_country_id, title, status, published_at, inventory_source_id)
      VALUES ($1, $2, 2024, 1000, $3, 'Published vehicle', 'published', now(), NULL) RETURNING id, reference_no`,
     [make.rows[0]!.id, model.rows[0]!.id, country.rows[0]!.id]
+  );
+  const source = await pool.query<{ id: string }>(
+    "INSERT INTO inventory_sources (company_name, contact_name, email) VALUES ('Private Supplier', 'Private Contact', 'supplier@example.test') RETURNING id"
+  );
+  await pool.query(
+    "UPDATE vehicles SET inventory_source_id = $1, purchase_cost_minor = 1234500, purchase_cost_currency = 'USD', estimated_local_cost_minor = 100000, cost_notes = 'private cost note', review_notes = 'private review' WHERE id = $2",
+    [source.rows[0]!.id, published.rows[0]!.id]
+  );
+  await pool.query(
+    'INSERT INTO vehicle_markets (vehicle_id, market_id, is_active) VALUES ($1, $2, true)',
+    [published.rows[0]!.id, market.rows[0]!.id]
   );
   await pool.query('INSERT INTO vehicle_features (vehicle_id, feature_id) VALUES ($1, $2)', [
     published.rows[0]!.id,
@@ -98,7 +117,10 @@ async function createFixture() {
   return {
     makeId: make.rows[0]!.id,
     featureId: feature.rows[0]!.id,
-    referenceNo: published.rows[0]!.reference_no
+    referenceNo: published.rows[0]!.reference_no,
+    marketSlug: `pakistan-${suffix}`,
+    vehicleId: published.rows[0]!.id,
+    marketId: market.rows[0]!.id
   };
 }
 
@@ -120,7 +142,7 @@ integration('public catalog and vehicle APIs', () => {
     const { app: api } = requireDependencies();
     const fixture = await createFixture();
     const response = await request(api).get(
-      `/api/v1/vehicles?makeId=${fixture.makeId}&featureIds=${fixture.featureId}`
+      `/api/v1/vehicles?market=${fixture.marketSlug}&makeId=${fixture.makeId}&featureIds=${fixture.featureId}`
     );
     const body = response.body as { data: Array<Record<string, unknown>> };
     expect(response.status).toBe(200);
@@ -133,19 +155,73 @@ integration('public catalog and vehicle APIs', () => {
     expect(JSON.stringify(response.body)).not.toContain('reviewNotes');
     expect(JSON.stringify(response.body)).not.toContain('stockNumber');
     expect(JSON.stringify(response.body)).not.toContain('vin');
+    expect(JSON.stringify(response.body)).not.toContain('purchaseCost');
+    expect(JSON.stringify(response.body)).not.toContain('margin');
+    expect(JSON.stringify(response.body)).not.toContain('Private Supplier');
+    expect(JSON.stringify(response.body)).not.toContain('1234500');
+    expect(JSON.stringify(response.body)).not.toContain('private cost note');
   });
 
   it('returns a published vehicle detail and keeps unpublished inventory private', async () => {
     const { app: api } = requireDependencies();
     const fixture = await createFixture();
-    expect((await request(api).get(`/api/v1/vehicles/${fixture.referenceNo}`)).status).toBe(200);
-    expect((await request(api).get('/api/v1/vehicles/GW-999999999')).status).toBe(404);
+    const detail = await request(api).get(
+      `/api/v1/vehicles/${fixture.referenceNo}?market=${fixture.marketSlug}`
+    );
+    expect(detail.status).toBe(200);
+    expect(JSON.stringify(detail.body)).not.toContain('Private Supplier');
+    expect(JSON.stringify(detail.body)).not.toContain('1234500');
+    expect(JSON.stringify(detail.body)).not.toContain('private cost note');
+    expect(
+      (await request(api).get(`/api/v1/vehicles/GW-999999999?market=${fixture.marketSlug}`)).status
+    ).toBe(404);
   });
 
   it('rejects unsupported sorts and malformed cursors', async () => {
     const { app: api } = requireDependencies();
-    await createFixture();
-    expect((await request(api).get('/api/v1/vehicles?sort=price_desc')).status).toBe(422);
-    expect((await request(api).get('/api/v1/vehicles?cursor=not-a-valid-cursor')).status).toBe(422);
+    const fixture = await createFixture();
+    expect(
+      (await request(api).get(`/api/v1/vehicles?market=${fixture.marketSlug}&sort=price_desc`))
+        .status
+    ).toBe(422);
+    expect(
+      (
+        await request(api).get(
+          `/api/v1/vehicles?market=${fixture.marketSlug}&cursor=not-a-valid-cursor`
+        )
+      ).status
+    ).toBe(422);
+  });
+
+  it('requires explicit active destination eligibility and commercial availability', async () => {
+    const { app: api, rawPool: pool } = requireDependencies();
+    const fixture = await createFixture();
+    const url = `/api/v1/vehicles?market=${fixture.marketSlug}`;
+    expect((await request(api).get('/api/v1/vehicles')).status).toBe(422);
+    expect(
+      ((await request(api).get('/api/v1/vehicles?market=unknown')).body as { data: unknown[] }).data
+    ).toHaveLength(0);
+    await pool.query("UPDATE markets SET status = 'inactive' WHERE id = $1", [fixture.marketId]);
+    expect(((await request(api).get(url)).body as { data: unknown[] }).data).toHaveLength(0);
+    expect((await request(api).get(`/api/v1/markets/${fixture.marketSlug}`)).status).toBe(404);
+    await pool.query("UPDATE markets SET status = 'active' WHERE id = $1", [fixture.marketId]);
+    await pool.query('UPDATE vehicle_markets SET is_active = false WHERE vehicle_id = $1', [
+      fixture.vehicleId
+    ]);
+    expect(((await request(api).get(url)).body as { data: unknown[] }).data).toHaveLength(0);
+    await pool.query('UPDATE vehicle_markets SET is_active = true WHERE vehicle_id = $1', [
+      fixture.vehicleId
+    ]);
+    await pool.query("UPDATE vehicles SET availability_status = 'reserved' WHERE id = $1", [
+      fixture.vehicleId
+    ]);
+    expect(((await request(api).get(url)).body as { data: unknown[] }).data).toHaveLength(0);
+    expect(
+      (
+        await request(api).get(
+          `/api/v1/vehicles/${fixture.referenceNo}?market=${fixture.marketSlug}`
+        )
+      ).status
+    ).toBe(404);
   });
 });

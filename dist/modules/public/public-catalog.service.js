@@ -10,7 +10,8 @@ function decodeCursor(encoded, sort) {
             throw new Error();
         if ((sort === 'newest' || sort === 'oldest') && typeof cursor.value !== 'string')
             throw new Error();
-        if ((sort === 'year_desc' || sort === 'mileage_asc') && typeof cursor.value !== 'number')
+        if (['year_desc', 'year_asc', 'mileage_asc', 'mileage_desc'].includes(sort) &&
+            typeof cursor.value !== 'number')
             throw new Error();
         return cursor;
     }
@@ -67,6 +68,38 @@ export class PublicCatalogService {
     constructor(db) {
         this.db = db;
     }
+    async listMarkets() {
+        const result = await sql `
+      SELECT m.slug, m.currency_code, m.locale, c.iso2, c.name FROM markets m
+      JOIN countries c ON c.id = m.country_id WHERE m.status = 'active' AND c.is_active
+      ORDER BY c.name`.execute(this.db);
+        return result.rows.map((row) => ({
+            slug: row.slug,
+            currencyCode: row.currency_code,
+            locale: row.locale,
+            country: { iso2: row.iso2, name: row.name }
+        }));
+    }
+    async getMarket(slug) {
+        const result = await sql `
+      SELECT m.slug, m.currency_code, m.locale, m.sales_email, m.sales_phone, m.sales_whatsapp,
+        m.seo_title, m.seo_description, c.iso2, c.name FROM markets m
+      JOIN countries c ON c.id = m.country_id WHERE m.slug = ${slug} AND m.status = 'active' AND c.is_active`.execute(this.db);
+        const market = result.rows[0];
+        if (!market)
+            throw notFoundError;
+        return {
+            slug: market.slug,
+            currencyCode: market.currency_code,
+            locale: market.locale,
+            salesEmail: market.sales_email,
+            salesPhone: market.sales_phone,
+            salesWhatsapp: market.sales_whatsapp,
+            seoTitle: market.seo_title,
+            seoDescription: market.seo_description,
+            country: { iso2: market.iso2, name: market.name }
+        };
+    }
     async listCountries(region) {
         let query = this.db
             .selectFrom('countries')
@@ -118,7 +151,10 @@ export class PublicCatalogService {
     }
     async listPublishedVehicles(filters) {
         const cursor = decodeCursor(filters.cursor, filters.sort);
-        const where = [sql `v.status = 'published' AND v.deleted_at IS NULL`];
+        const where = [
+            sql `v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL`,
+            sql `EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id = vm.market_id JOIN countries mc ON mc.id = mk.country_id WHERE vm.vehicle_id = v.id AND vm.is_active AND mk.status = 'active' AND mc.is_active AND mk.slug = ${filters.market} AND (vm.available_from IS NULL OR vm.available_from <= now()) AND (vm.available_until IS NULL OR vm.available_until > now()))`
+        ];
         if (filters.q)
             where.push(sql `(v.reference_no ILIKE ${`%${filters.q}%`} OR v.title ILIKE ${`%${filters.q}%`} OR COALESCE(v.variant, '') ILIKE ${`%${filters.q}%`})`);
         if (filters.makeId)
@@ -133,26 +169,40 @@ export class PublicCatalogService {
             where.push(sql `v.year >= ${filters.yearMin}`);
         if (filters.yearMax !== undefined)
             where.push(sql `v.year <= ${filters.yearMax}`);
+        if (filters.yearFrom !== undefined)
+            where.push(sql `v.year >= ${filters.yearFrom}`);
+        if (filters.yearTo !== undefined)
+            where.push(sql `v.year <= ${filters.yearTo}`);
+        if (filters.mileageFrom !== undefined)
+            where.push(sql `v.mileage_km >= ${filters.mileageFrom}`);
+        if (filters.mileageTo !== undefined)
+            where.push(sql `v.mileage_km <= ${filters.mileageTo}`);
         if (filters.mileageMax !== undefined)
             where.push(sql `v.mileage_km <= ${filters.mileageMax}`);
+        if (filters.engineCcFrom !== undefined)
+            where.push(sql `v.engine_cc >= ${filters.engineCcFrom}`);
+        if (filters.engineCcTo !== undefined)
+            where.push(sql `v.engine_cc <= ${filters.engineCcTo}`);
         if (filters.engineCcMin !== undefined)
             where.push(sql `v.engine_cc >= ${filters.engineCcMin}`);
         if (filters.engineCcMax !== undefined)
             where.push(sql `v.engine_cc <= ${filters.engineCcMax}`);
-        if (filters.fuel)
-            where.push(sql `v.fuel = ${filters.fuel}`);
-        if (filters.transmission)
-            where.push(sql `v.transmission = ${filters.transmission}`);
-        if (filters.drive)
-            where.push(sql `v.drive = ${filters.drive}`);
-        if (filters.steering)
-            where.push(sql `v.steering = ${filters.steering}`);
+        if (filters.fuel?.length)
+            where.push(sql `v.fuel::text IN (${sql.join(filters.fuel)})`);
+        if (filters.transmission?.length)
+            where.push(sql `v.transmission::text IN (${sql.join(filters.transmission)})`);
+        if (filters.drive?.length)
+            where.push(sql `v.drive::text IN (${sql.join(filters.drive)})`);
+        if (filters.steering?.length)
+            where.push(sql `v.steering::text IN (${sql.join(filters.steering)})`);
         if (filters.seats !== undefined)
             where.push(sql `v.seats = ${filters.seats}`);
         if (filters.doors !== undefined)
             where.push(sql `v.doors = ${filters.doors}`);
         if (filters.exteriorColor)
             where.push(sql `v.exterior_color ILIKE ${filters.exteriorColor}`);
+        if (filters.interiorColor)
+            where.push(sql `v.interior_color ILIKE ${filters.interiorColor}`);
         if (filters.stockCountryId)
             where.push(sql `v.stock_country_id = ${filters.stockCountryId}`);
         if (filters.featureIds.length)
@@ -181,14 +231,15 @@ export class PublicCatalogService {
             }
         };
     }
-    async getPublishedVehicle(referenceNo) {
+    async getPublishedVehicle(referenceNo, market) {
         const result = await sql `
       SELECT v.id, v.reference_no, v.title, v.description, v.condition::text, v.variant, v.year, v.mileage_km, v.engine_cc, v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug, bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
       FROM vehicles v JOIN makes m ON m.id = v.make_id JOIN models mo ON mo.id = v.model_id JOIN countries c ON c.id = v.stock_country_id LEFT JOIN body_types bt ON bt.id = v.body_type_id
       LEFT JOIN LATERAL (SELECT id, type, url, thumb_url, sort_order FROM vehicle_media WHERE vehicle_id = v.id ORDER BY is_primary DESC, sort_order, created_at LIMIT 1) media ON TRUE
-      WHERE v.reference_no = ${referenceNo} AND v.status = 'published' AND v.deleted_at IS NULL`.execute(this.db);
+      WHERE v.reference_no = ${referenceNo} AND v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id = vm.market_id JOIN countries mc ON mc.id = mk.country_id WHERE vm.vehicle_id = v.id AND vm.is_active AND mk.status = 'active' AND mc.is_active AND mk.slug = ${market} AND (vm.available_from IS NULL OR vm.available_from <= now()) AND (vm.available_until IS NULL OR vm.available_until > now()))`.execute(this.db);
         const row = result.rows[0];
         if (!row)
             throw notFoundError;
@@ -228,8 +279,12 @@ export class PublicCatalogService {
             return sql `v.published_at ASC NULLS LAST, v.id ASC`;
         if (sort === 'year_desc')
             return sql `v.year DESC, v.id DESC`;
+        if (sort === 'year_asc')
+            return sql `v.year ASC, v.id ASC`;
         if (sort === 'mileage_asc')
             return sql `COALESCE(v.mileage_km, 2147483647) ASC, v.id ASC`;
+        if (sort === 'mileage_desc')
+            return sql `COALESCE(v.mileage_km, -1) DESC, v.id DESC`;
         return sql `v.published_at DESC NULLS LAST, v.id DESC`;
     }
     cursorCondition(cursor) {
@@ -237,15 +292,23 @@ export class PublicCatalogService {
             return sql `(v.published_at, v.id) > (${cursor.value}::timestamptz, ${cursor.id}::uuid)`;
         if (cursor.sort === 'year_desc')
             return sql `(v.year, v.id) < (${cursor.value}::smallint, ${cursor.id}::uuid)`;
+        if (cursor.sort === 'year_asc')
+            return sql `(v.year, v.id) > (${cursor.value}::smallint, ${cursor.id}::uuid)`;
         if (cursor.sort === 'mileage_asc')
             return sql `(COALESCE(v.mileage_km, 2147483647), v.id) > (${cursor.value}::integer, ${cursor.id}::uuid)`;
+        if (cursor.sort === 'mileage_desc')
+            return sql `(COALESCE(v.mileage_km, -1), v.id) < (${cursor.value}::integer, ${cursor.id}::uuid)`;
         return sql `(v.published_at, v.id) < (${cursor.value}::timestamptz, ${cursor.id}::uuid)`;
     }
     cursorFor(row, sort) {
         if (sort === 'year_desc')
             return { sort, value: row.year, id: row.id };
+        if (sort === 'year_asc')
+            return { sort, value: row.year, id: row.id };
         if (sort === 'mileage_asc')
             return { sort, value: row.mileage_km ?? 2147483647, id: row.id };
+        if (sort === 'mileage_desc')
+            return { sort, value: row.mileage_km ?? -1, id: row.id };
         return { sort, value: row.published_at.toISOString(), id: row.id };
     }
 }

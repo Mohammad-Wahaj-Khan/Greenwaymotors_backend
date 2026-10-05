@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { validationError } from '../../core/errors/http-errors.js';
+import { getRequestContext } from '../../core/http/request-context.js';
 import { validateBody } from '../../middleware/validate.middleware.js';
 import { createRoleSchema, replacePermissionsSchema, replaceUserRolesSchema, updateRoleSchema } from './rbac.schema.js';
 import { RbacService } from './rbac.service.js';
@@ -24,16 +25,22 @@ export function createRbacRouter(database) {
         actorId: request.auth.user.id,
         ...(request.ip ? { ipAddress: request.ip } : {})
     });
-    router.get('/roles', async (_request, response) => response.json({ data: await service.listRoles() }));
+    router.get('/roles', async (_request, response) => response.json({
+        data: await service.listRoles(),
+        meta: { requestId: getRequestContext()?.requestId }
+    }));
     router.post('/roles', validateBody(createRoleSchema), async (request, response) => {
         const role = await service.createRole(request.body, { ...audit(request), action: 'rbac.role.create', entityType: 'role' });
-        response.status(201).json({ data: role });
+        response.status(201).json({ data: role, meta: { requestId: getRequestContext()?.requestId } });
     });
     router.patch('/roles/:id', validateBody(updateRoleSchema), async (request, response) => {
         const role = await service.updateRole(parseId(request.params.id), request.body, { ...audit(request), action: 'rbac.role.update', entityType: 'role' });
-        response.json({ data: role });
+        response.json({ data: role, meta: { requestId: getRequestContext()?.requestId } });
     });
-    router.get('/permissions', async (_request, response) => response.json({ data: await service.listPermissions() }));
+    router.get('/permissions', async (_request, response) => response.json({
+        data: await service.listPermissions(),
+        meta: { requestId: getRequestContext()?.requestId }
+    }));
     router.put('/roles/:id/permissions', validateBody(replacePermissionsSchema), async (request, response) => {
         await service.replaceRolePermissions(parseId(request.params.id), request.body.permissionIds, { ...audit(request), action: 'rbac.role_permissions.replace', entityType: 'role' });
         response.status(204).end();

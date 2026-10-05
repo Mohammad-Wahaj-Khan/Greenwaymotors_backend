@@ -1,7 +1,8 @@
 import { type Kysely } from 'kysely';
 import type { DB } from '../../generated/database.types.js';
-type Sort = 'newest' | 'oldest' | 'year_desc' | 'mileage_asc';
+type Sort = 'newest' | 'oldest' | 'year_desc' | 'year_asc' | 'mileage_asc' | 'mileage_desc';
 export interface VehicleListFilters {
+    market: string;
     q?: string | undefined;
     makeId?: number | undefined;
     modelId?: number | undefined;
@@ -9,16 +10,23 @@ export interface VehicleListFilters {
     condition?: 'new' | 'used' | undefined;
     yearMin?: number | undefined;
     yearMax?: number | undefined;
+    yearFrom?: number | undefined;
+    yearTo?: number | undefined;
+    mileageFrom?: number | undefined;
+    mileageTo?: number | undefined;
     mileageMax?: number | undefined;
+    engineCcFrom?: number | undefined;
+    engineCcTo?: number | undefined;
     engineCcMin?: number | undefined;
     engineCcMax?: number | undefined;
-    fuel?: string | undefined;
-    transmission?: string | undefined;
-    drive?: string | undefined;
-    steering?: string | undefined;
+    fuel?: string[] | undefined;
+    transmission?: string[] | undefined;
+    drive?: string[] | undefined;
+    steering?: string[] | undefined;
     seats?: number | undefined;
     doors?: number | undefined;
     exteriorColor?: string | undefined;
+    interiorColor?: string | undefined;
     stockCountryId?: number | undefined;
     featureIds: number[];
     sort: Sort;
@@ -28,6 +36,29 @@ export interface VehicleListFilters {
 export declare class PublicCatalogService {
     private readonly db;
     constructor(db: Kysely<DB>);
+    listMarkets(): Promise<{
+        slug: string;
+        currencyCode: string;
+        locale: string;
+        country: {
+            iso2: string;
+            name: string;
+        };
+    }[]>;
+    getMarket(slug: string): Promise<{
+        slug: string;
+        currencyCode: string;
+        locale: string;
+        salesEmail: string | null;
+        salesPhone: string | null;
+        salesWhatsapp: string | null;
+        seoTitle: string | null;
+        seoDescription: string | null;
+        country: {
+            iso2: string;
+            name: string;
+        };
+    }>;
     listCountries(region?: string): Promise<{
         id: number;
         iso2: string;
@@ -158,7 +189,7 @@ export declare class PublicCatalogService {
             nextCursor: string | null;
         };
     }>;
-    getPublishedVehicle(referenceNo: string): Promise<{
+    getPublishedVehicle(referenceNo: string, market: string): Promise<{
         media: {
             id: string;
             type: "image" | "video";

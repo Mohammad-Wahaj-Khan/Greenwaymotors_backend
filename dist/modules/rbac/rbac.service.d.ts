@@ -23,23 +23,23 @@ export declare class RbacService {
     }[]>;
     listPermissions(): Promise<{
         code: string;
-        description: string | null;
         id: number;
+        description: string | null;
     }[]>;
     createRole(input: {
         name: string;
         description?: string | null;
     }, audit: Omit<AuditInput, 'entityId' | 'changes'>): Promise<{
-        description: string | null;
         id: number;
+        description: string | null;
         name: string;
     }>;
     updateRole(roleId: number, input: {
         name?: string;
         description?: string | null;
     }, audit: Omit<AuditInput, 'entityId' | 'changes'>): Promise<{
-        description: string | null;
         id: number;
+        description: string | null;
         name: string;
     }>;
     replaceRolePermissions(roleId: number, permissionIds: number[], audit: Omit<AuditInput, 'entityId' | 'changes'>): Promise<void>;
