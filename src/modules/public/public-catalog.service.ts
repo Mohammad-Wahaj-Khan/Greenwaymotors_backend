@@ -7,6 +7,7 @@ type Sort = 'newest' | 'oldest' | 'year_desc' | 'year_asc' | 'mileage_asc' | 'mi
 
 export interface VehicleListFilters {
   market: string;
+  featuredOnly?: boolean | undefined;
   q?: string | undefined;
   makeId?: number | undefined;
   modelId?: number | undefined;
@@ -261,6 +262,11 @@ export class PublicCatalogService {
       sql`v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL`,
       sql`EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id = vm.market_id JOIN countries mc ON mc.id = mk.country_id WHERE vm.vehicle_id = v.id AND vm.is_active AND mk.status = 'active' AND mc.is_active AND mk.slug = ${filters.market} AND (vm.available_from IS NULL OR vm.available_from <= now()) AND (vm.available_until IS NULL OR vm.available_until > now()))`
     ];
+    if (filters.featuredOnly) {
+      where.push(
+        sql`EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id=vm.market_id JOIN countries mc ON mc.id=mk.country_id WHERE vm.vehicle_id=v.id AND vm.is_active AND vm.featured AND mk.status='active' AND mc.is_active AND mk.slug=${filters.market} AND (vm.available_from IS NULL OR vm.available_from<=now()) AND (vm.available_until IS NULL OR vm.available_until>now()))`
+      );
+    }
     if (filters.q)
       where.push(
         sql`(v.reference_no ILIKE ${`%${filters.q}%`} OR v.title ILIKE ${`%${filters.q}%`} OR COALESCE(v.variant, '') ILIKE ${`%${filters.q}%`})`

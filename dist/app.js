@@ -10,7 +10,6 @@ import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { createRbacRouter } from './modules/rbac/rbac.routes.js';
 import { createLogger } from './core/logging/logger.js';
-import { createEmailService } from './integrations/email/email.service.js';
 import { getRequestContext } from './core/http/request-context.js';
 import { problemDetailsMiddleware } from './middleware/error.middleware.js';
 import { notFoundMiddleware } from './middleware/not-found.middleware.js';
@@ -29,6 +28,13 @@ import { createPublicLeadsRouter } from './modules/leads/public-leads.routes.js'
 import { createStaffLeadsRouter } from './modules/leads/staff-leads.routes.js';
 import { createQuoteRouter } from './modules/commercial/quote.routes.js';
 import { createDealRouter } from './modules/commercial/deal.routes.js';
+import { createMeRouter, createStaffNotificationRouter } from './modules/customers/personal.routes.js';
+import { createCmsAdminRouter, createPublicContentRouter } from './modules/content/content.routes.js';
+import { createStaffManagementRouter } from './modules/admin/staff-audit.routes.js';
+import { createDashboardRouter } from './modules/admin/dashboard-reports.routes.js';
+import { createVehicleImportRouter } from './modules/admin/vehicle-import.routes.js';
+import { createVehicleWorkflowRouter } from './modules/admin/vehicle-workflow.routes.js';
+import { createCatalogAdminRouter } from './modules/admin/catalog.routes.js';
 export function createApp(environment, dependencies) {
     const app = express();
     const logger = createLogger(environment);
@@ -59,10 +65,14 @@ export function createApp(environment, dependencies) {
         app.get('/api/docs/openapi.yaml', (_request, response) => response.type('text/yaml').send(specification));
         app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(document, { swaggerOptions: { persistAuthorization: true } }));
     }
-    app.use('/api/v1', createAuthRouter(authService, dependencies.email ?? createEmailService(environment), environment, environment.REDIS_REQUIRED ? dependencies.redis : undefined));
+    app.use('/api/v1', createAuthRouter(authService, environment, environment.REDIS_REQUIRED ? dependencies.redis : undefined));
+    app.use('/api/v1/me', authenticate(authService), createMeRouter(dependencies.database.db));
+    app.use('/api/v1/admin', authenticate(authService), createCmsAdminRouter(dependencies.database.db), createStaffManagementRouter(dependencies.database.db), createDashboardRouter(dependencies.database.db), createVehicleImportRouter(dependencies.database.db), createVehicleWorkflowRouter(dependencies.database.db), createCatalogAdminRouter(dependencies.database.db));
     app.use('/api/v1/admin', authenticate(authService), createSourceMarketRouter(dependencies.database.db), createVehicleRouter(dependencies.database.db), createUploadMediaRouter(dependencies.database.db, dependencies.storage ?? createObjectStorage(environment)), requirePermission('rbac.manage'), createRbacRouter(dependencies.database));
+    app.use('/api/v1/staff', authenticate(authService), createStaffNotificationRouter(dependencies.database.db));
     app.use('/api/v1/staff', authenticate(authService), createStaffLeadsRouter(dependencies.database.db), createQuoteRouter(dependencies.database.db), createDealRouter(dependencies.database.db));
     app.use('/api/v1', createPublicLeadsRouter(dependencies.database.db, authService, environment.REDIS_REQUIRED ? dependencies.redis : undefined));
+    app.use('/api/v1/content', createPublicContentRouter(dependencies.database.db));
     app.use('/api/v1', createPublicRouter(dependencies.database));
     app.use(notFoundMiddleware);
     app.use(problemDetailsMiddleware);

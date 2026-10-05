@@ -30,6 +30,7 @@ declare const environmentSchema: z.ZodObject<{
     MAIL_PROVIDER: z.ZodString;
     SMTP_HOST: z.ZodDefault<z.ZodString>;
     SMTP_PORT: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    DATA_ENCRYPTION_KEY: z.ZodOptional<z.ZodString>;
     LOG_LEVEL: z.ZodDefault<z.ZodEnum<{
         error: "error";
         fatal: "fatal";

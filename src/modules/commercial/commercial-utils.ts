@@ -84,4 +84,18 @@ export async function writeActivity(
     .execute();
 }
 
+export async function notifyUser(
+  db: CommercialDb,
+  userId: string | null,
+  type: string,
+  title: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  if (!userId) return;
+  await db
+    .insertInto('notifications')
+    .values({ user_id: userId, type, title, data: data as Json })
+    .execute();
+}
+
 export { audit };

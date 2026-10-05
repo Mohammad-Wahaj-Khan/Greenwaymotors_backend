@@ -18,9 +18,20 @@ export const loginSchema = z
     .strict();
 export const emailSchema = z.object({ email: z.email().max(320) }).strict();
 export const tokenSchema = z.object({ token: z.string().min(32).max(512) }).strict();
+export const mfaChallengeSchema = z
+    .object({
+    challengeToken: z.string().min(32).max(512),
+    code: z.string().regex(/^(\d{6}|[A-Fa-f0-9]{12})$/)
+})
+    .strict();
+export const mfaCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
 export const resetPasswordSchema = tokenSchema
     .extend({ newPassword: z.string().min(10).max(256) })
     .strict();
+export const changePasswordSchema = z
+    .object({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(10).max(256) })
+    .strict()
+    .refine((value) => value.currentPassword !== value.newPassword, 'Choose a different password.');
 export const updateProfileSchema = z
     .object({
     fullName: z.string().trim().min(1).max(255).optional(),

@@ -25,6 +25,7 @@ export declare function loadConfig(): {
         SMTP_HOST: string;
         SMTP_PORT: number;
         LOG_LEVEL: "error" | "fatal" | "warn" | "info" | "debug" | "trace";
+        DATA_ENCRYPTION_KEY?: string | undefined;
     };
     readonly app: {
         readonly environment: "development" | "test" | "production";

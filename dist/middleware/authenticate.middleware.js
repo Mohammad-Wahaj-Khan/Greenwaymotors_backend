@@ -1,4 +1,4 @@
-import { authenticationError } from '../core/errors/http-errors.js';
+import { authenticationError, forbiddenError } from '../core/errors/http-errors.js';
 export function authenticate(service) {
     return async (request, _response, next) => {
         try {
@@ -11,6 +11,14 @@ export function authenticate(service) {
                 throw authenticationError();
             }
             request.auth = await service.authenticateAccessToken(token);
+            if (request.auth.mfaRequired &&
+                !request.auth.mfaSatisfied &&
+                process.env.NODE_ENV === 'production' &&
+                !(request.method === 'GET' && request.originalUrl.split('?')[0] === '/api/v1/auth/me') &&
+                !(request.method === 'POST' &&
+                    ['/api/v1/auth/me/mfa/enroll', '/api/v1/auth/me/mfa/confirm'].includes(request.originalUrl.split('?')[0] ?? ''))) {
+                throw forbiddenError('Complete staff MFA enrollment before using this account.');
+            }
             next();
         }
         catch (error) {

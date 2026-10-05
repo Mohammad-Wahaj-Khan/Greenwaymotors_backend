@@ -31,9 +31,17 @@ const environmentSchema = z
     MAIL_PROVIDER: z.string().min(1),
     SMTP_HOST: z.string().min(1).default('127.0.0.1'),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(1025),
+    DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')
   })
   .superRefine((environment, context) => {
+    if (environment.NODE_ENV === 'production' && !environment.DATA_ENCRYPTION_KEY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['DATA_ENCRYPTION_KEY'],
+        message: 'Sensitive outbox payload encryption key is required in production.'
+      });
+    }
     if (environment.NODE_ENV === 'production' && !environment.REDIS_REQUIRED) {
       context.addIssue({
         code: 'custom',

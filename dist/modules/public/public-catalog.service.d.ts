@@ -3,6 +3,7 @@ import type { DB } from '../../generated/database.types.js';
 type Sort = 'newest' | 'oldest' | 'year_desc' | 'year_asc' | 'mileage_asc' | 'mileage_desc';
 export interface VehicleListFilters {
     market: string;
+    featuredOnly?: boolean | undefined;
     q?: string | undefined;
     makeId?: number | undefined;
     modelId?: number | undefined;

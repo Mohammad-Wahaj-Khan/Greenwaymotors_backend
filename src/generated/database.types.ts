@@ -88,6 +88,28 @@ export interface BodyTypes {
   slug: string;
 }
 
+export interface CmsEntries {
+  author_id: string | null;
+  content: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  editor_id: string | null;
+  excerpt: string | null;
+  id: Generated<string>;
+  kind: string;
+  published_at: Timestamp | null;
+  seo_description: string | null;
+  seo_title: string | null;
+  slug: string;
+  status: Generated<string>;
+  title: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CmsEntryMarkets {
+  entry_id: string;
+  market_id: string;
+}
+
 export interface CommercialIdempotency {
   created_at: Generated<Timestamp>;
   idempotency_key: string;
@@ -285,6 +307,23 @@ export interface Markets {
   updated_at: Generated<Timestamp>;
 }
 
+export interface MfaChallenges {
+  consumed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  token_hash: string;
+  user_id: string;
+}
+
+export interface MfaRecoveryCodes {
+  code_hash: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  used_at: Timestamp | null;
+  user_id: string;
+}
+
 export interface Models {
   id: Generated<number>;
   is_active: Generated<boolean>;
@@ -304,10 +343,34 @@ export interface Notifications {
   user_id: string;
 }
 
+export interface OutboxEvents {
+  attempts: Generated<number>;
+  available_at: Generated<Timestamp>;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  last_error: string | null;
+  locked_at: Timestamp | null;
+  payload: Json;
+  status: Generated<string>;
+  topic: string;
+}
+
 export interface Permissions {
   code: string;
   description: string | null;
   id: Generated<number>;
+}
+
+export interface QuoteDocuments {
+  content: Buffer;
+  created_at: Generated<Timestamp>;
+  generated_by: string;
+  id: Generated<string>;
+  quote_id: string;
+  quote_version_id: string;
+  sha256: string;
 }
 
 export interface QuoteItems {
@@ -406,6 +469,14 @@ export interface UploadIntents {
   status: Generated<UploadIntentStatus>;
 }
 
+export interface UserMfa {
+  created_at: Generated<Timestamp>;
+  enabled_at: Timestamp | null;
+  secret_ciphertext: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface UserRoles {
   role_id: number;
   user_id: string;
@@ -453,6 +524,29 @@ export interface UserTokens {
 export interface VehicleFeatures {
   feature_id: number;
   vehicle_id: string;
+}
+
+export interface VehicleImportJobs {
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  failed_count: Generated<number>;
+  id: Generated<string>;
+  imported_count: Generated<number>;
+  row_count: number;
+  started_at: Timestamp | null;
+  status: Generated<string>;
+}
+
+export interface VehicleImportRows {
+  created_at: Generated<Timestamp>;
+  errors: Generated<Json>;
+  id: Generated<string>;
+  job_id: string;
+  raw_data: Json;
+  row_no: number;
+  status: Generated<string>;
+  vehicle_id: string | null;
 }
 
 export interface VehicleMarkets {
@@ -544,6 +638,8 @@ export interface Vehicles {
 export interface DB {
   audit_logs: AuditLogs;
   body_types: BodyTypes;
+  cms_entries: CmsEntries;
+  cms_entry_markets: CmsEntryMarkets;
   commercial_idempotency: CommercialIdempotency;
   countries: Countries;
   deals: Deals;
@@ -557,9 +653,13 @@ export interface DB {
   leads: Leads;
   makes: Makes;
   markets: Markets;
+  mfa_challenges: MfaChallenges;
+  mfa_recovery_codes: MfaRecoveryCodes;
   models: Models;
   notifications: Notifications;
+  outbox_events: OutboxEvents;
   permissions: Permissions;
+  quote_documents: QuoteDocuments;
   quote_items: QuoteItems;
   quote_version_lifecycle: QuoteVersionLifecycle;
   quote_versions: QuoteVersions;
@@ -569,11 +669,14 @@ export interface DB {
   saved_searches: SavedSearches;
   schema_migrations: SchemaMigrations;
   upload_intents: UploadIntents;
+  user_mfa: UserMfa;
   user_roles: UserRoles;
   user_sessions: UserSessions;
   user_tokens: UserTokens;
   users: Users;
   vehicle_features: VehicleFeatures;
+  vehicle_import_jobs: VehicleImportJobs;
+  vehicle_import_rows: VehicleImportRows;
   vehicle_markets: VehicleMarkets;
   vehicle_media: VehicleMedia;
   vehicle_reservations: VehicleReservations;

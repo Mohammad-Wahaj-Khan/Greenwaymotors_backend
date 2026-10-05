@@ -4,10 +4,14 @@ import { createApp } from './app.js';
 import { createPostgresPool } from './core/db/database.js';
 import { createRedisClient } from './integrations/redis/redis.js';
 import { createLogger } from './core/logging/logger.js';
+import { createEmailService } from './integrations/email/email.service.js';
+import { startOutboxWorker } from './integrations/outbox/outbox-worker.js';
 const { environment: env } = loadConfig();
 const logger = createLogger(env);
 const database = createPostgresPool(env);
 const redis = createRedisClient(env);
+const email = createEmailService(env);
+const outboxWorker = startOutboxWorker(database.db, env, email, logger);
 const app = createApp(env, { database, redis });
 const server = createServer(app);
 server.requestTimeout = 30_000;
@@ -31,6 +35,7 @@ async function shutdown(signal, exitCode) {
     }, 10_000);
     forcedExit.unref();
     try {
+        await outboxWorker.stop();
         await Promise.all([database.close(), redis.close()]);
         logger.info('graceful shutdown complete');
         process.exit(exitCode);

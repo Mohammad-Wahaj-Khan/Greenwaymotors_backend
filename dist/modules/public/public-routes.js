@@ -144,6 +144,41 @@ export function createPublicRouter(database) {
             meta: { requestId: getRequestContext()?.requestId }
         });
     });
+    router.get('/market-context', async (request, response) => {
+        const parsed = z
+            .object({ market: z.string().trim().min(1).max(100).optional() })
+            .safeParse(queryObject(request.query));
+        if (!parsed.success)
+            throw validationError('market must be a valid market slug.');
+        let query = database.db
+            .selectFrom('markets')
+            .innerJoin('countries', 'countries.id', 'markets.country_id')
+            .select([
+            'markets.id',
+            'markets.slug',
+            'markets.currency_code',
+            'markets.locale',
+            'markets.sales_email',
+            'markets.sales_phone',
+            'markets.sales_whatsapp',
+            'countries.iso2',
+            'countries.iso3',
+            'countries.name as country_name'
+        ])
+            .where('markets.status', '=', 'active')
+            .where('countries.is_active', '=', true);
+        if (parsed.data.market)
+            query = query.where('markets.slug', '=', parsed.data.market);
+        const market = await query.orderBy('markets.slug').executeTakeFirst();
+        response.json({
+            data: {
+                market: market ?? null,
+                selection: parsed.data.market ? 'client' : 'default',
+                geolocation: 'not_configured'
+            },
+            meta: { requestId: getRequestContext()?.requestId }
+        });
+    });
     router.get('/catalog/makes', async (_request, response) => response.json({
         data: await service.listMakes(),
         meta: { requestId: getRequestContext()?.requestId }
@@ -182,6 +217,72 @@ export function createPublicRouter(database) {
         response.status(200).json({
             data: result.data,
             meta: { ...result.meta, requestId: getRequestContext()?.requestId }
+        });
+    });
+    router.get('/vehicles/featured', async (request, response) => {
+        const parsed = z
+            .object({
+            market: z.string().trim().min(1).max(100),
+            limit: z.coerce.number().int().min(1).max(50).default(12)
+        })
+            .safeParse(queryObject(request.query));
+        if (!parsed.success)
+            throw validationError('market and a valid limit are required.');
+        const result = await service.listPublishedVehicles({
+            market: parsed.data.market,
+            limit: parsed.data.limit,
+            sort: 'newest',
+            featureIds: [],
+            featuredOnly: true
+        });
+        response.json({
+            data: result.data,
+            meta: { ...result.meta, requestId: getRequestContext()?.requestId }
+        });
+    });
+    router.get('/vehicles/new-arrivals', async (request, response) => {
+        const parsed = z
+            .object({
+            market: z.string().trim().min(1).max(100),
+            limit: z.coerce.number().int().min(1).max(50).default(12)
+        })
+            .safeParse(queryObject(request.query));
+        if (!parsed.success)
+            throw validationError('market and a valid limit are required.');
+        const result = await service.listPublishedVehicles({
+            market: parsed.data.market,
+            limit: parsed.data.limit,
+            sort: 'newest',
+            featureIds: []
+        });
+        response.json({
+            data: result.data,
+            meta: { ...result.meta, requestId: getRequestContext()?.requestId }
+        });
+    });
+    router.get('/vehicles/:referenceNo/similar', async (request, response) => {
+        const market = z.string().trim().min(1).max(100).safeParse(request.query.market);
+        if (!market.success)
+            throw validationError('market is required.');
+        const referenceNo = z
+            .string()
+            .trim()
+            .regex(/^GW-\d+$/)
+            .safeParse(request.params.referenceNo);
+        if (!referenceNo.success)
+            throw validationError('referenceNo is invalid.');
+        const vehicle = await service.getPublishedVehicle(referenceNo.data, market.data);
+        const result = await service.listPublishedVehicles({
+            market: market.data,
+            makeId: vehicle.make.id,
+            modelId: vehicle.model.id,
+            limit: 12,
+            sort: 'newest',
+            featureIds: []
+        });
+        response.json({
+            data: result.data.filter((item) => item.referenceNo !== referenceNo.data),
+            meta: { requestId: getRequestContext()?.requestId }
         });
     });
     router.get('/vehicles/:referenceNo', async (request, response) => {

@@ -6,6 +6,7 @@ import { authenticationError } from '../errors/http-errors.js';
 export interface AccessTokenClaims {
   subject: string;
   type: 'access';
+  mfaSatisfied: boolean;
 }
 
 function getHmacKey(environment: Environment): Uint8Array {
@@ -16,8 +17,8 @@ export function createAccessTokenService(environment: Environment) {
   const signingKey = getHmacKey(environment);
 
   return {
-    async issue(subject: string): Promise<string> {
-      return new SignJWT({ typ: 'access' })
+    async issue(subject: string, mfaSatisfied = false): Promise<string> {
+      return new SignJWT({ typ: 'access', mfa: mfaSatisfied })
         .setProtectedHeader({ alg: 'HS256' })
         .setSubject(subject)
         .setJti(crypto.randomUUID())
@@ -32,7 +33,11 @@ export function createAccessTokenService(environment: Environment) {
           throw authenticationError('The access token is invalid.');
         }
 
-        return { subject: payload.sub, type: 'access' };
+        return {
+          subject: payload.sub,
+          type: 'access',
+          mfaSatisfied: payload.mfa === true
+        };
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AppError') {
           throw error;
