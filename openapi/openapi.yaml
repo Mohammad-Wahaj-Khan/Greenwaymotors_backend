@@ -1,0 +1,418 @@
+openapi: 3.1.0
+info:
+  title: Green Way Motors API
+  version: 0.3.0
+  description: Implemented backend contract. The MVP roadmap is maintained separately in greenway-motors-mvp.openapi.yaml.
+servers:
+  - url: http://localhost:4000
+    description: Local development
+tags:
+  - name: Health
+  - name: Public
+  - name: Auth
+  - name: Admin RBAC
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      operationId: getLiveness
+      responses:
+        '200': { description: API process is alive. }
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      responses:
+        '200': { description: Required dependencies are available. }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/v1/countries:
+    get:
+      tags: [Public]
+      operationId: listCountries
+      responses:
+        '200': { description: Active countries. }
+  /api/v1/catalog/makes:
+    get:
+      tags: [Public]
+      operationId: listMakes
+      responses:
+        '200': { description: Active makes. }
+  /api/v1/catalog/models:
+    get:
+      tags: [Public]
+      operationId: listModels
+      parameters:
+        - name: makeId
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: Active models. }
+  /api/v1/catalog/body-types:
+    get:
+      tags: [Public]
+      operationId: listBodyTypes
+      responses:
+        '200': { description: Vehicle body types. }
+  /api/v1/catalog/features:
+    get:
+      tags: [Public]
+      operationId: listFeatures
+      responses:
+        '200': { description: Vehicle features. }
+  /api/v1/vehicles:
+    get:
+      tags: [Public]
+      operationId: listPublishedVehicles
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200': { description: Published vehicles. }
+  /api/v1/vehicles/{referenceNo}:
+    get:
+      tags: [Public]
+      operationId: getPublishedVehicle
+      parameters:
+        - {
+            name: referenceNo,
+            in: path,
+            required: true,
+            schema: { type: string, pattern: '^GW-[0-9]+$' }
+          }
+      responses:
+        '200': { description: A published vehicle. }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/customers/register:
+    post:
+      tags: [Auth]
+      operationId: registerCustomer
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterCustomerInput' }
+      responses:
+        '201':
+          description: Customer registered; verification email delivery is initiated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginInput' }
+      responses:
+        '200':
+          description: Access JWT response and rotating HttpOnly refresh cookie.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthEnvelope' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      security:
+        - refreshCookie: []
+      responses:
+        '200':
+          description: Rotated refresh cookie and new access JWT.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthEnvelope' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      security:
+        - bearerAuth: []
+          refreshCookie: []
+      responses:
+        '200': { description: Current refresh session revoked. }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/logout-all:
+    post:
+      tags: [Auth]
+      operationId: logoutAll
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: All refresh sessions revoked. }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/email-verification/request:
+    post:
+      tags: [Auth]
+      operationId: requestEmailVerification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailInput' }
+      responses:
+        '200': { description: Neutral success response to prevent account enumeration. }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/email-verification/confirm:
+    post:
+      tags: [Auth]
+      operationId: confirmEmailVerification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TokenInput' }
+      responses:
+        '200': { description: Email verified. }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/password/forgot:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailInput' }
+      responses:
+        '200': { description: Neutral success response to prevent account enumeration. }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/password/reset:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordInput' }
+      responses:
+        '200': { description: Password reset and refresh sessions revoked. }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current sanitized user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Auth]
+      operationId: updateCurrentUser
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileInput' }
+      responses:
+        '200':
+          description: Current sanitized user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/roles:
+    get:
+      tags: [Admin RBAC]
+      operationId: listRoles
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Roles with their permissions. }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Admin RBAC]
+      operationId: createRole
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleInput' }
+      responses:
+        '201': { description: Role created and audited. }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/roles/{id}:
+    patch:
+      tags: [Admin RBAC]
+      operationId: updateRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Role updated and audited. }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/permissions:
+    get:
+      tags: [Admin RBAC]
+      operationId: listPermissions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Permissions. }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/roles/{id}/permissions:
+    put:
+      tags: [Admin RBAC]
+      operationId: replaceRolePermissions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PermissionIdsInput' }
+      responses:
+        '204': { description: Role permissions replaced and audited. }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/admin/users/{userId}/roles:
+    put:
+      tags: [Admin RBAC]
+      operationId: replaceStaffUserRoles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleIdsInput' }
+      responses:
+        '204': { description: Staff roles replaced and audited. }
+        '403': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: greenway_refresh_token
+  responses:
+    Problem:
+      description: RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code, requestId]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        requestId: { type: string }
+    User:
+      type: object
+      required: [id, userType, email, fullName, status]
+      properties:
+        id: { type: string, format: uuid }
+        userType: { type: string, enum: [customer, staff] }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        phone: { type: [string, 'null'] }
+        whatsapp: { type: [string, 'null'] }
+        countryId: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        preferredContact: { type: [string, 'null'], enum: [email, phone, whatsapp, null] }
+        status: { type: string, enum: [active, suspended, deleted] }
+        emailVerifiedAt: { type: [string, 'null'], format: date-time }
+    UserEnvelope:
+      type: object
+      required: [data]
+      properties: { data: { $ref: '#/components/schemas/User' } }
+    AuthEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [accessToken, user]
+          properties:
+            accessToken: { type: string }
+            user: { $ref: '#/components/schemas/User' }
+    RegisterCustomerInput:
+      type: object
+      required: [email, password, fullName]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 10 }
+        fullName: { type: string }
+        phone: { type: [string, 'null'] }
+        whatsapp: { type: [string, 'null'] }
+        countryId: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        preferredContact: { type: [string, 'null'], enum: [email, phone, whatsapp, null] }
+    LoginInput:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    EmailInput:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties: { email: { type: string, format: email } }
+    TokenInput:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties: { token: { type: string } }
+    ResetPasswordInput:
+      allOf:
+        - { $ref: '#/components/schemas/TokenInput' }
+        - type: object
+          required: [newPassword]
+          properties: { newPassword: { type: string, minLength: 10 } }
+    UpdateProfileInput:
+      type: object
+      additionalProperties: false
+      properties:
+        fullName: { type: string }
+        phone: { type: [string, 'null'] }
+        whatsapp: { type: [string, 'null'] }
+        countryId: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        preferredContact: { type: [string, 'null'], enum: [email, phone, whatsapp, null] }
+    RoleInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, pattern: '^[a-z][a-z0-9_]*$' }
+        description: { type: [string, 'null'] }
+    PermissionIdsInput:
+      type: object
+      required: [permissionIds]
+      properties: { permissionIds: { type: array, items: { type: integer, minimum: 1 } } }
+    RoleIdsInput:
+      type: object
+      required: [roleIds]
+      properties: { roleIds: { type: array, items: { type: integer, minimum: 1 } } }

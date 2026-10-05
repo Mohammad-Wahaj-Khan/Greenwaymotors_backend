@@ -1,0 +1,32 @@
+import type { Kysely, Transaction } from 'kysely';
+import type { DB } from '../../generated/database.types.js';
+export type DatabaseExecutor = Kysely<DB> | Transaction<DB>;
+export declare const userColumns: readonly ["id", "user_type", "email", "full_name", "phone", "whatsapp", "country_id", "city", "preferred_contact", "status", "email_verified_at"];
+export declare function findUserById(database: DatabaseExecutor, id: string): Promise<{
+    email: string;
+    phone: string | null;
+    whatsapp: string | null;
+    id: string;
+    city: string | null;
+    user_type: import("../../generated/database.types.js").UserType;
+    full_name: string;
+    country_id: number | null;
+    preferred_contact: import("../../generated/database.types.js").ContactMethod | null;
+    status: "active" | "deleted" | "suspended";
+    email_verified_at: Date | null;
+} | undefined>;
+export declare function findUserForLogin(database: DatabaseExecutor, email: string): Promise<{
+    email: string;
+    phone: string | null;
+    whatsapp: string | null;
+    id: string;
+    city: string | null;
+    user_type: import("../../generated/database.types.js").UserType;
+    full_name: string;
+    country_id: number | null;
+    preferred_contact: import("../../generated/database.types.js").ContactMethod | null;
+    status: "active" | "deleted" | "suspended";
+    email_verified_at: Date | null;
+    password_hash: string;
+} | undefined>;
+export declare function findUserPermissions(database: DatabaseExecutor, userId: string): Promise<string[]>;

@@ -1,0 +1,1 @@
+{"version":3,"file":"auth.config.js","sourceRoot":"","sources":["../../src/config/auth.config.ts"],"names":[],"mappings":"AAEA,MAAM,UAAU,gBAAgB,CAAC,WAAwB;IACvD,OAAO;QACL,qBAAqB,EAAE,WAAW,CAAC,wBAAwB;QAC3D,oBAAoB,EAAE,WAAW,CAAC,uBAAuB;QACzD,qBAAqB,EAAE,WAAW,CAAC,wBAAwB;QAC3D,mBAAmB,EAAE,WAAW,CAAC,sBAAsB;KAC/C,CAAC;AACb,CAAC"}
