@@ -1,6 +1,5 @@
 import type { RequestHandler } from 'express';
 import type { Environment } from '../../config/env.js';
-import type { EmailService } from '../../integrations/email/email.service.js';
 import type { AuthService } from './auth.service.js';
 interface AuthController {
     register: RequestHandler;
@@ -12,8 +11,12 @@ interface AuthController {
     confirmVerification: RequestHandler;
     forgotPassword: RequestHandler;
     resetPassword: RequestHandler;
+    changePassword: RequestHandler;
     me: RequestHandler;
     updateMe: RequestHandler;
+    mfaChallenge: RequestHandler;
+    mfaEnroll: RequestHandler;
+    mfaConfirm: RequestHandler;
 }
-export declare function createAuthController(service: AuthService, email: EmailService, environment: Environment): AuthController;
+export declare function createAuthController(service: AuthService, environment: Environment): AuthController;
 export {};

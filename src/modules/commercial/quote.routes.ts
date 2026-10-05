@@ -1,6 +1,7 @@
 import { Router, type Request, type RequestHandler } from 'express';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { Kysely, Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable } from 'kysely';
 import type {
   DB,
   QuoteItems,
@@ -18,7 +19,14 @@ import {
   encodePageCursor,
   decodePageCursor
 } from '../../core/http/api-response.js';
-import { audit, demandLeadUpdate, idempotent, writeActivity } from './commercial-utils.js';
+import {
+  audit,
+  demandLeadUpdate,
+  idempotent,
+  notifyUser,
+  writeActivity
+} from './commercial-utils.js';
+import { renderCustomerQuotePdf } from './quote-pdf.js';
 
 const quoteRefSchema = z.string().regex(/^Q-\d+$/);
 const idempotencyKey = z.string().min(8).max(200);
@@ -503,6 +511,14 @@ export async function convertAcceptedQuote(
     quoteId: quote.id,
     versionNo: version.version_no,
     dealId: created.id
+  });
+  await notifyUser(trx, lead.assigned_to, 'deal.created', 'Accepted quote converted to deal', {
+    dealReferenceNo: created.reference_no,
+    quoteReferenceNo: quote.reference_no
+  });
+  await notifyUser(trx, lead.customer_id, 'quote.accepted', 'Quote accepted', {
+    quoteReferenceNo: quote.reference_no,
+    dealReferenceNo: created.reference_no
   });
   await audit(trx, actorId, 'quote.accepted', 'quote', quote.id, {
     versionNo: version.version_no,
@@ -1100,6 +1116,19 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
         await audit(trx, req.auth!.user.id, 'quote.sent', 'quote', quote.id, {
           versionNo: quote.current_version_no
         });
+        await notifyUser(trx, quote.assigned_to, 'quote.sent', 'Quote sent', {
+          quoteReferenceNo: quote.reference_no,
+          versionNo: quote.current_version_no
+        });
+        const customer = await trx
+          .selectFrom('leads')
+          .select('customer_id')
+          .where('id', '=', quote.lead_id)
+          .executeTakeFirst();
+        await notifyUser(trx, customer?.customer_id ?? null, 'quote.sent', 'A quote is ready', {
+          quoteReferenceNo: quote.reference_no,
+          versionNo: quote.current_version_no
+        });
         return {
           referenceNo: ref,
           status: 'sent',
@@ -1270,6 +1299,94 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
         terms: version.terms_text,
         customerNotes: version.customer_notes
       });
+    }
+  );
+  router.post('/quotes/:quoteRef/pdf', permits('quote.send'), async (req, res) => {
+    const quote = await loadQuote(db, parseInput(quoteRefSchema, req.params.quoteRef));
+    assertScope(req, quote);
+    demandLeadUpdate(req, { assigned_to: quote.assigned_to });
+    const version = await db
+      .selectFrom('quote_versions')
+      .selectAll()
+      .where('quote_id', '=', quote.id)
+      .where('version_no', '=', quote.current_version_no)
+      .executeTakeFirst();
+    if (!version) throw notFoundError;
+    const items = await db
+      .selectFrom('quote_items')
+      .select(['label', 'quantity', 'unit_amount_minor', 'line_total_minor'])
+      .where('quote_version_id', '=', version.id)
+      .where('visibility', '=', 'customer')
+      .orderBy('sort_order')
+      .execute();
+    const pdf = renderCustomerQuotePdf({
+      reference: quote.reference_no,
+      versionNo: version.version_no,
+      currency: quote.currency_code,
+      vehicle: version.vehicle_snapshot,
+      items: items.map((item) => ({
+        label: item.label,
+        quantity: item.quantity,
+        unitAmountMinor: String(item.unit_amount_minor),
+        lineTotalMinor: String(item.line_total_minor)
+      })),
+      totalMinor: String(version.customer_total_minor),
+      validUntil: version.valid_until,
+      terms: version.terms_text,
+      customerNotes: version.customer_notes
+    });
+    const sha256 = createHash('sha256').update(pdf).digest('hex');
+    await db.transaction().execute(async (trx) => {
+      await sql`
+          INSERT INTO quote_documents (quote_id, quote_version_id, generated_by, content, sha256)
+          VALUES (${quote.id}::uuid, ${version.id}::uuid, ${req.auth!.user.id}::uuid, ${pdf}, ${sha256})
+          ON CONFLICT (quote_version_id) DO UPDATE SET
+            generated_by = EXCLUDED.generated_by,
+            content = EXCLUDED.content,
+            sha256 = EXCLUDED.sha256,
+            created_at = now()
+        `.execute(trx);
+      await audit(trx, req.auth!.user.id, 'quote.pdf.generated', 'quote', quote.id, {
+        versionNo: version.version_no,
+        sha256
+      });
+    });
+    sendData(
+      res,
+      {
+        quoteReference: quote.reference_no,
+        versionNo: version.version_no,
+        sha256,
+        downloadPath: `/api/v1/staff/quotes/${quote.reference_no}/pdf`
+      },
+      201
+    );
+  });
+  router.get(
+    '/quotes/:quoteRef/pdf',
+    permits('quote.read_all', 'quote.read_assigned'),
+    async (req, res) => {
+      const quote = await loadQuote(db, parseInput(quoteRefSchema, req.params.quoteRef));
+      assertScope(req, quote);
+      const document = await sql<{ content: Buffer; sha256: string; version_no: number }>`
+        SELECT d.content, d.sha256, v.version_no
+        FROM quote_documents d
+        JOIN quote_versions v ON v.id = d.quote_version_id
+        WHERE d.quote_id = ${quote.id}::uuid
+          AND v.version_no = ${quote.current_version_no}
+      `.execute(db);
+      const row = document.rows[0];
+      if (!row) throw notFoundError;
+      res
+        .status(200)
+        .type('application/pdf')
+        .set('Cache-Control', 'private, no-store')
+        .set(
+          'Content-Disposition',
+          `attachment; filename="${quote.reference_no}-v${row.version_no}.pdf"`
+        )
+        .set('X-Content-SHA256', row.sha256)
+        .send(row.content);
     }
   );
   return router;

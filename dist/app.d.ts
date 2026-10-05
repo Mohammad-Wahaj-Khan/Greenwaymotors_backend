@@ -8,6 +8,7 @@ import { type ObjectStorage } from './integrations/storage/object-storage.js';
 export interface AppDependencies extends HealthDependencies {
     database: DatabaseConnection;
     redis: RedisConnection;
+    /** Kept for integration test fixtures; production delivery runs through the outbox worker. */
     email?: EmailService;
     storage?: ObjectStorage;
 }

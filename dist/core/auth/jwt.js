@@ -7,8 +7,8 @@ function getHmacKey(environment) {
 export function createAccessTokenService(environment) {
     const signingKey = getHmacKey(environment);
     return {
-        async issue(subject) {
-            return new SignJWT({ typ: 'access' })
+        async issue(subject, mfaSatisfied = false) {
+            return new SignJWT({ typ: 'access', mfa: mfaSatisfied })
                 .setProtectedHeader({ alg: 'HS256' })
                 .setSubject(subject)
                 .setJti(crypto.randomUUID())
@@ -22,7 +22,11 @@ export function createAccessTokenService(environment) {
                 if (payload.typ !== 'access' || typeof payload.sub !== 'string') {
                     throw authenticationError('The access token is invalid.');
                 }
-                return { subject: payload.sub, type: 'access' };
+                return {
+                    subject: payload.sub,
+                    type: 'access',
+                    mfaSatisfied: payload.mfa === true
+                };
             }
             catch (error) {
                 if (error instanceof Error && error.name === 'AppError') {

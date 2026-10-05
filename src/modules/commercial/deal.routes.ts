@@ -18,6 +18,7 @@ import {
   canAccessDeal,
   demandLeadUpdate,
   idempotent,
+  notifyUser,
   writeActivity
 } from './commercial-utils.js';
 import { convertAcceptedQuote, dealDto, expireActiveReservations } from './quote.routes.js';
@@ -632,6 +633,12 @@ export function createDealRouter(db: Kysely<DB>): Router {
         reason: input.reason
       });
       await audit(trx, req.auth!.user.id, 'deal.cancelled', 'deal', d.id, { reason: input.reason });
+      await notifyUser(trx, d.owner_salesperson_id, 'deal.cancelled', 'Deal cancelled', {
+        dealReferenceNo: d.reference_no
+      });
+      await notifyUser(trx, d.customer_id, 'deal.cancelled', 'Deal cancelled', {
+        dealReferenceNo: d.reference_no
+      });
       return updated;
     });
     sendData(res, mapDeal(row, req));
@@ -708,6 +715,12 @@ export function createDealRouter(db: Kysely<DB>): Router {
           );
           await audit(trx, req.auth!.user.id, 'deal.completed', 'deal', d.id, {
             vehicleId: d.vehicle_id
+          });
+          await notifyUser(trx, d.owner_salesperson_id, 'deal.completed', 'Deal completed', {
+            dealReferenceNo: d.reference_no
+          });
+          await notifyUser(trx, d.customer_id, 'deal.completed', 'Deal completed', {
+            dealReferenceNo: d.reference_no
           });
           await writeActivity(
             trx,

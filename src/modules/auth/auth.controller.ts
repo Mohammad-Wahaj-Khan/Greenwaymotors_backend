@@ -2,7 +2,6 @@ import type { RequestHandler } from 'express';
 import type { Environment } from '../../config/env.js';
 import { forbiddenError } from '../../core/errors/http-errors.js';
 import { getRequestContext } from '../../core/http/request-context.js';
-import type { EmailService } from '../../integrations/email/email.service.js';
 import type { AuthService } from './auth.service.js';
 import type { LoginInput, RegisterCustomerInput, UpdateProfileInput } from './auth.schema.js';
 
@@ -53,14 +52,6 @@ function readRefreshCookie(request: Parameters<RequestHandler>[0]): string | und
   return typeof token === 'string' ? token : undefined;
 }
 
-function deliver(
-  request: Parameters<RequestHandler>[0],
-  task: Promise<void>,
-  message: string
-): void {
-  void task.catch((error: unknown) => request.log.error({ err: error }, message));
-}
-
 interface AuthController {
   register: RequestHandler;
   login: RequestHandler;
@@ -71,22 +62,20 @@ interface AuthController {
   confirmVerification: RequestHandler;
   forgotPassword: RequestHandler;
   resetPassword: RequestHandler;
+  changePassword: RequestHandler;
   me: RequestHandler;
   updateMe: RequestHandler;
+  mfaChallenge: RequestHandler;
+  mfaEnroll: RequestHandler;
+  mfaConfirm: RequestHandler;
 }
 
 export function createAuthController(
   service: AuthService,
-  email: EmailService,
   environment: Environment
 ): AuthController {
   const register: RequestHandler = async (request, response) => {
     const result = await service.registerCustomer(request.body as RegisterCustomerInput);
-    deliver(
-      request,
-      email.sendVerificationEmail({ email: result.user.email, token: result.verificationToken }),
-      'verification email delivery failed'
-    );
     response
       .status(201)
       .json({ data: result.user, meta: { requestId: getRequestContext()?.requestId } });
@@ -94,9 +83,19 @@ export function createAuthController(
 
   const login: RequestHandler = async (request, response) => {
     const session = await service.login(request.body as LoginInput, requestMetadata(request));
+    if ('mfaChallengeRequired' in session) {
+      response
+        .status(202)
+        .json({ data: session, meta: { requestId: getRequestContext()?.requestId } });
+      return;
+    }
     response.cookie(refreshCookieName, session.refreshToken, sessionCookieOptions(environment));
     response.json({
-      data: { accessToken: session.accessToken, user: session.user },
+      data: {
+        accessToken: session.accessToken,
+        user: session.user,
+        ...(session.mfaSetupRequired ? { mfaSetupRequired: true } : {})
+      },
       meta: { requestId: getRequestContext()?.requestId }
     });
   };
@@ -135,13 +134,10 @@ export function createAuthController(
   };
 
   const requestVerification: RequestHandler = async (request, response) => {
-    const record = await service.requestOneTimeToken(
+    await service.requestOneTimeToken(
       (request.body as { email: string }).email,
       'email_verification'
     );
-    if (record) {
-      deliver(request, email.sendVerificationEmail(record), 'verification email delivery failed');
-    }
     response.json({
       data: { message: 'If an eligible account exists, a verification email will be sent.' },
       meta: { requestId: getRequestContext()?.requestId }
@@ -157,17 +153,7 @@ export function createAuthController(
   };
 
   const forgotPassword: RequestHandler = async (request, response) => {
-    const record = await service.requestOneTimeToken(
-      (request.body as { email: string }).email,
-      'password_reset'
-    );
-    if (record) {
-      deliver(
-        request,
-        email.sendPasswordResetEmail(record),
-        'password reset email delivery failed'
-      );
-    }
+    await service.requestOneTimeToken((request.body as { email: string }).email, 'password_reset');
     response.json({
       data: { message: 'If an eligible account exists, a password reset email will be sent.' },
       meta: { requestId: getRequestContext()?.requestId }
@@ -179,6 +165,16 @@ export function createAuthController(
     await service.resetPassword(input.token, input.newPassword);
     response.json({
       data: { passwordReset: true },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
+  };
+
+  const changePassword: RequestHandler = async (request, response) => {
+    const input = request.body as { currentPassword: string; newPassword: string };
+    await service.changePassword(request.auth!.user.id, input.currentPassword, input.newPassword);
+    response.clearCookie(refreshCookieName, sessionCookieOptions(environment));
+    response.json({
+      data: { passwordChanged: true, refreshSessionsRevoked: true },
       meta: { requestId: getRequestContext()?.requestId }
     });
   };
@@ -198,6 +194,48 @@ export function createAuthController(
     response.json({ data: user, meta: { requestId: getRequestContext()?.requestId } });
   };
 
+  const mfaChallenge: RequestHandler = async (request, response) => {
+    const input = request.body as { challengeToken: string; code: string };
+    const session = await service.verifyMfaChallenge(
+      input.challengeToken,
+      input.code,
+      requestMetadata(request)
+    );
+    response.cookie(refreshCookieName, session.refreshToken, sessionCookieOptions(environment));
+    response.json({
+      data: { accessToken: session.accessToken, user: session.user },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
+  };
+
+  const mfaEnroll: RequestHandler = async (request, response) => {
+    if (request.auth!.user.userType !== 'staff')
+      throw forbiddenError('MFA enrollment is only available to staff.');
+    const result = await service.enrollMfa(request.auth!.user.id, request.auth!.user.email);
+    response
+      .status(201)
+      .json({ data: result, meta: { requestId: getRequestContext()?.requestId } });
+  };
+
+  const mfaConfirm: RequestHandler = async (request, response) => {
+    if (request.auth!.user.userType !== 'staff')
+      throw forbiddenError('MFA enrollment is only available to staff.');
+    const session = await service.confirmMfa(
+      request.auth!.user,
+      (request.body as { code: string }).code,
+      requestMetadata(request)
+    );
+    response.cookie(refreshCookieName, session.refreshToken, sessionCookieOptions(environment));
+    response.json({
+      data: {
+        accessToken: session.accessToken,
+        user: session.user,
+        recoveryCodes: session.recoveryCodes
+      },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
+  };
+
   return {
     register,
     login,
@@ -208,7 +246,11 @@ export function createAuthController(
     confirmVerification,
     forgotPassword,
     resetPassword,
+    changePassword,
     me,
-    updateMe
+    updateMe,
+    mfaChallenge,
+    mfaEnroll,
+    mfaConfirm
   };
 }

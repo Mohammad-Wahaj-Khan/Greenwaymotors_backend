@@ -17,10 +17,19 @@ export interface UserSummary {
 export interface AuthContext {
   user: UserSummary;
   permissions: ReadonlySet<string>;
+  mfaRequired: boolean;
+  mfaSatisfied: boolean;
 }
 
 export interface SessionIssue {
   accessToken: string;
   refreshToken: string;
   user: UserSummary;
+  mfaSetupRequired?: boolean;
+}
+
+export interface LoginChallenge {
+  mfaChallengeRequired: true;
+  challengeToken: string;
+  expiresAt: string;
 }

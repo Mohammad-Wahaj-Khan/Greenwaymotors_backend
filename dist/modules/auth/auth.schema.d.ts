@@ -23,8 +23,19 @@ export declare const emailSchema: z.ZodObject<{
 export declare const tokenSchema: z.ZodObject<{
     token: z.ZodString;
 }, z.core.$strict>;
+export declare const mfaChallengeSchema: z.ZodObject<{
+    challengeToken: z.ZodString;
+    code: z.ZodString;
+}, z.core.$strict>;
+export declare const mfaCodeSchema: z.ZodObject<{
+    code: z.ZodString;
+}, z.core.$strict>;
 export declare const resetPasswordSchema: z.ZodObject<{
     token: z.ZodString;
+    newPassword: z.ZodString;
+}, z.core.$strict>;
+export declare const changePasswordSchema: z.ZodObject<{
+    currentPassword: z.ZodString;
     newPassword: z.ZodString;
 }, z.core.$strict>;
 export declare const updateProfileSchema: z.ZodObject<{

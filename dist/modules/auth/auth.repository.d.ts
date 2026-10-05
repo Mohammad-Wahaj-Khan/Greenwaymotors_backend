@@ -7,12 +7,12 @@ export declare function findUserById(database: DatabaseExecutor, id: string): Pr
     phone: string | null;
     whatsapp: string | null;
     id: string;
+    country_id: number | null;
+    status: "active" | "deleted" | "suspended";
     city: string | null;
     user_type: import("../../generated/database.types.js").UserType;
     full_name: string;
-    country_id: number | null;
     preferred_contact: import("../../generated/database.types.js").ContactMethod | null;
-    status: "active" | "deleted" | "suspended";
     email_verified_at: Date | null;
 } | undefined>;
 export declare function findUserForLogin(database: DatabaseExecutor, email: string): Promise<{
@@ -20,12 +20,12 @@ export declare function findUserForLogin(database: DatabaseExecutor, email: stri
     phone: string | null;
     whatsapp: string | null;
     id: string;
+    country_id: number | null;
+    status: "active" | "deleted" | "suspended";
     city: string | null;
     user_type: import("../../generated/database.types.js").UserType;
     full_name: string;
-    country_id: number | null;
     preferred_contact: import("../../generated/database.types.js").ContactMethod | null;
-    status: "active" | "deleted" | "suspended";
     email_verified_at: Date | null;
     password_hash: string;
 } | undefined>;
