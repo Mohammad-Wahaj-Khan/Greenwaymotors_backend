@@ -4,5 +4,8 @@ dist/
 coverage/
 src/generated/database.types.ts
 .env
+GreenWay_Backend_Master_Spec_v1.md
+.tmp-phase01-pg/
+.tmp-phase23-pg/
+pnpm-lock.yaml
 *.log
-

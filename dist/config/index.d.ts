@@ -3,6 +3,7 @@ export declare function loadConfig(): {
     readonly environment: {
         NODE_ENV: "development" | "test" | "production";
         PORT: number;
+        TRUST_PROXY_HOPS: number;
         DATABASE_URL: string;
         DATABASE_POOL_MAX: number;
         DATABASE_CONNECTION_TIMEOUT_MS: number;

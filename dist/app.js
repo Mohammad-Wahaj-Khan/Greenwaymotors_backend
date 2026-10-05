@@ -17,11 +17,23 @@ import { notFoundMiddleware } from './middleware/not-found.middleware.js';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
 import { authenticate } from './middleware/authenticate.middleware.js';
 import { requirePermission } from './middleware/authorize.middleware.js';
+import { createSourceMarketRouter } from './modules/admin/source-market.routes.js';
+import { createVehicleRouter } from './modules/admin/vehicle.routes.js';
+import { createUploadMediaRouter } from './modules/admin/upload-media.routes.js';
+import { createObjectStorage } from './integrations/storage/object-storage.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yaml';
+import { createPublicLeadsRouter } from './modules/leads/public-leads.routes.js';
+import { createStaffLeadsRouter } from './modules/leads/staff-leads.routes.js';
+import { createQuoteRouter } from './modules/commercial/quote.routes.js';
+import { createDealRouter } from './modules/commercial/deal.routes.js';
 export function createApp(environment, dependencies) {
     const app = express();
     const logger = createLogger(environment);
     const authService = new AuthService(dependencies.database.db, environment);
-    app.set('trust proxy', 1);
+    app.set('trust proxy', environment.TRUST_PROXY_HOPS);
     app.disable('x-powered-by');
     app.use(requestIdMiddleware);
     app.use(pinoHttp({ logger, customProps: () => ({ requestId: getRequestContext()?.requestId }) }));
@@ -41,8 +53,16 @@ export function createApp(environment, dependencies) {
     app.use(express.json({ limit: '1mb', strict: true }));
     app.use(compression());
     app.use('/health', createHealthRouter(environment, dependencies));
+    if (environment.NODE_ENV !== 'production') {
+        const specification = readFileSync(fileURLToPath(new URL('../openapi/openapi.yaml', import.meta.url)), 'utf8');
+        const document = YAML.parse(specification);
+        app.get('/api/docs/openapi.yaml', (_request, response) => response.type('text/yaml').send(specification));
+        app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(document, { swaggerOptions: { persistAuthorization: true } }));
+    }
     app.use('/api/v1', createAuthRouter(authService, dependencies.email ?? createEmailService(environment), environment, environment.REDIS_REQUIRED ? dependencies.redis : undefined));
-    app.use('/api/v1/admin', authenticate(authService), requirePermission('rbac.manage'), createRbacRouter(dependencies.database));
+    app.use('/api/v1/admin', authenticate(authService), createSourceMarketRouter(dependencies.database.db), createVehicleRouter(dependencies.database.db), createUploadMediaRouter(dependencies.database.db, dependencies.storage ?? createObjectStorage(environment)), requirePermission('rbac.manage'), createRbacRouter(dependencies.database));
+    app.use('/api/v1/staff', authenticate(authService), createStaffLeadsRouter(dependencies.database.db), createQuoteRouter(dependencies.database.db), createDealRouter(dependencies.database.db));
+    app.use('/api/v1', createPublicLeadsRouter(dependencies.database.db, authService, environment.REDIS_REQUIRED ? dependencies.redis : undefined));
     app.use('/api/v1', createPublicRouter(dependencies.database));
     app.use(notFoundMiddleware);
     app.use(problemDetailsMiddleware);

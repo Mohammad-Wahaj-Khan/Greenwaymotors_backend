@@ -1,5 +1,7 @@
 import request from 'supertest';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Pool } from 'pg';
+import { applyInitialSchema, applySeeds } from '../../scripts/database-files.js';
 import { createApp } from '../../src/app.js';
 import { hashPassword } from '../../src/core/auth/password.js';
 import { hashOpaqueToken } from '../../src/core/auth/token.js';
@@ -95,6 +97,18 @@ afterAll(async () => {
 });
 
 describe.skipIf(!testUrl)('authentication and RBAC', () => {
+  beforeAll(async () => {
+    if (!testUrl) throw new Error('DATABASE_TEST_URL is required.');
+    const pool = new Pool({ connectionString: testUrl, max: 1 });
+    try {
+      await pool.query('DROP SCHEMA public CASCADE');
+      await pool.query('CREATE SCHEMA public');
+      await applyInitialSchema(pool);
+      await applySeeds(pool);
+    } finally {
+      await pool.end();
+    }
+  });
   it('rejects invalid credentials, rotates refresh tokens, and rejects a replayed refresh token', async () => {
     const api = requireApp();
     const emailAddress = `auth-${suffix}@example.test`;
@@ -102,6 +116,7 @@ describe.skipIf(!testUrl)('authentication and RBAC', () => {
       .post('/api/v1/auth/customers/register')
       .send({ email: emailAddress, password: 'strong-password-123', fullName: 'Test Customer' });
     expect(registration.status).toBe(201);
+    expect(registration.body).toHaveProperty('meta.requestId');
     expect(JSON.stringify(registration.body)).not.toContain('password_hash');
     expect(JSON.stringify(registration.body)).not.toContain('token_hash');
 
@@ -114,6 +129,10 @@ describe.skipIf(!testUrl)('authentication and RBAC', () => {
       .post('/api/v1/auth/login')
       .send({ email: emailAddress, password: 'strong-password-123' });
     expect(login.status).toBe(200);
+    const responseHeaders: unknown = login.headers;
+    expect(JSON.stringify((responseHeaders as Record<string, unknown>)['set-cookie'])).toContain(
+      'Path=/api/v1/auth'
+    );
     const loginBody = responseBody<AuthResponse>(login);
     expect(loginBody.data.accessToken).toEqual(expect.any(String));
     const firstRefreshCookie = cookieHeader(login);

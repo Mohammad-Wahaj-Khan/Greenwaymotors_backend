@@ -1,0 +1,360 @@
+import { z } from 'zod';
+import { ArrayExpressionNode } from '../generator/ast/array-expression-node';
+import { ExtendsClauseNode } from '../generator/ast/extends-clause-node';
+import { GenericExpressionNode } from '../generator/ast/generic-expression-node';
+import { IdentifierNode } from '../generator/ast/identifier-node';
+import { InferClauseNode } from '../generator/ast/infer-clause-node';
+import { LiteralNode } from '../generator/ast/literal-node';
+import { MappedTypeNode } from '../generator/ast/mapped-type-node';
+import { ObjectExpressionNode } from '../generator/ast/object-expression-node';
+import { RawExpressionNode } from '../generator/ast/raw-expression-node';
+import { UnionExpressionNode } from '../generator/ast/union-expression-node';
+import type { PostprocessFunction } from '../generator/generator/generate';
+import type { RuntimeEnumsStyle } from '../generator/generator/runtime-enums-style';
+import type { Serializer } from '../generator/generator/serializer';
+import type { LogLevel } from '../generator/logger/log-level';
+import { Logger } from '../generator/logger/logger';
+import type { Overrides } from '../generator/transformer/transformer';
+import { IntrospectorDialect } from '../introspector/dialect';
+import type { DateParser } from '../introspector/dialects/postgres/date-parser';
+import type { NumericParser } from '../introspector/dialects/postgres/numeric-parser';
+import { DatabaseMetadata } from '../introspector/metadata/database-metadata';
+export type Config<DB = any> = {
+    /**
+     * Use the Kysely `CamelCasePlugin`.
+     */
+    camelCase?: boolean;
+    /**
+     * Specify custom type imports, in JSON format. Use # for named imports.
+     *
+     * @example
+     * ```ts
+     * {
+     *   InstantRange: './custom-types',
+     *   MyType: './types#OriginalType',
+     * }
+     * ```
+     */
+    customImports?: CustomImports;
+    /**
+     * Specify which parser to use for PostgreSQL date values.
+     *
+     * @default 'timestamp'
+     */
+    dateParser?: DateParser;
+    /**
+     * Set the default schema(s) for the database connection.
+     */
+    defaultSchemas?: string[];
+    /**
+     * Explicitly set the SQL dialect.
+     */
+    dialect?: DialectName | null;
+    /**
+     * Generate types for PostgreSQL domains.
+     */
+    domains?: boolean;
+    /**
+     * Specify the path to an environment file to use.
+     */
+    envFile?: string | null;
+    /**
+     * Exclude tables that match the specified glob pattern.
+     *
+     * @example 'users'
+     * @example '*.table'
+     * @example 'secrets.*'
+     * @example '*._*'
+     */
+    excludePattern?: string | null;
+    /**
+     * Only include tables that match the specified glob pattern.
+     *
+     * @example 'users'
+     * @example '*.table'
+     * @example 'secrets.*'
+     * @example '*._*'
+     */
+    includePattern?: string | null;
+    /**
+     * Specify a custom logger.
+     */
+    logger?: Logger;
+    /**
+     * Set the terminal log level.
+     *
+     * @default 'warn'
+     */
+    logLevel?: LogLevel;
+    /**
+     * Specify which parser to use for PostgreSQL numeric values.
+     *
+     * @default 'string'
+     */
+    numericParser?: NumericParser;
+    /**
+     * Set the file build path.
+     *
+     * @default './node_modules/kysely-codegen/dist/db.d.ts'
+     */
+    outFile?: string | null;
+    /**
+     * Specify type overrides for specific table columns, in JSON format.
+     *
+     * @example
+     * ```ts
+     * {
+     *   columns: {
+     *     'table_name.column_name': '{ foo: \'bar\' }'
+     *   }
+     * }
+     * ```
+     */
+    overrides?: Overrides;
+    /**
+     * Include partitions of PostgreSQL tables in the generated code.
+     */
+    partitions?: boolean;
+    /**
+     * Postprocess the introspected metadata before generating code.
+     *
+     * This function allows you to reuse the active Kysely connection to further
+     * introspect the database and modify the metadata as needed.
+     *
+     * @example
+     * ```ts
+     * // Generate enum types from PostGraphile enum tables:
+     * postprocess: async ({ db, metadata }) => {
+     *   const rows = await db
+     *     .selectFrom("pg_catalog.pg_constraint as foreign_key_constraint")
+     *     .innerJoin(
+     *       "pg_catalog.pg_class as from_table",
+     *       "from_table.oid",
+     *       "foreign_key_constraint.conrelid",
+     *     )
+     *     .innerJoin(
+     *       "pg_catalog.pg_namespace as from_table_namespace",
+     *       "from_table_namespace.oid",
+     *       "from_table.relnamespace",
+     *     )
+     *     .innerJoin("pg_catalog.pg_attribute as from_column", (join) =>
+     *       join
+     *         .onRef("from_column.attrelid", "=", "from_table.oid")
+     *         .on(sql`from_column.attnum = any(foreign_key_constraint.conkey)`),
+     *     )
+     *     .innerJoin(
+     *       "pg_catalog.pg_class as to_table",
+     *       "to_table.oid",
+     *       "foreign_key_constraint.confrelid",
+     *     )
+     *     .innerJoin(
+     *       "pg_catalog.pg_namespace as to_table_namespace",
+     *       "to_table_namespace.oid",
+     *       "to_table.relnamespace",
+     *     )
+     *     .innerJoin("pg_catalog.pg_attribute as to_column", (join) =>
+     *       join
+     *         .onRef("to_column.attrelid", "=", "to_table.oid")
+     *         .on(sql`to_column.attnum = any(foreign_key_constraint.confkey)`),
+     *     )
+     *     .select([
+     *       "from_table_namespace.nspname as fromSchema",
+     *       "from_table.relname as fromTable",
+     *       "from_column.attname as fromColumn",
+     *       "to_table_namespace.nspname as enumSchema",
+     *       "to_table.relname as enumTable",
+     *       "to_column.attname as enumColumn",
+     *     ])
+     *     .where("foreign_key_constraint.contype", "=", "f")
+     *     .where(sql<any>`obj_description(to_table.oid, 'pg_class') like '%@enum%'`)
+     *     .execute();
+     *
+     *   await Promise.all(
+     *     rows.map(
+     *       async ({
+     *         fromColumn,
+     *         fromSchema,
+     *         fromTable,
+     *         enumColumn,
+     *         enumSchema,
+     *         enumTable,
+     *       }) => {
+     *         const fromTableMetadata = metadata.tables.find(
+     *           (table) => table.schema === fromSchema && table.name === fromTable,
+     *         );
+     *         const fromColumnMetadata = fromTableMetadata?.columns.find(
+     *           (column) => column.name === fromColumn,
+     *         );
+     *         const enumTableMetadata = metadata.tables.find(
+     *           (table) => table.schema === enumSchema && table.name === enumTable,
+     *         );
+     *         const enumColumnMetadata = enumTableMetadata?.columns.find(
+     *           (column) => column.name === enumColumn,
+     *         );
+     *
+     *         if (fromColumnMetadata || enumColumnMetadata) {
+     *           const dataType = `${enumTable}.${enumColumn}`;
+     *           const enumValues = await db
+     *             .selectFrom(`${enumSchema}.${enumTable}`)
+     *             .select(enumColumn)
+     *             .execute()
+     *             .then((rows) =>
+     *               rows.map((row) => (row as Record<string, string>)[enumColumn]),
+     *             );
+     *
+     *           metadata.enums.set(`${enumSchema}.${dataType}`, enumValues);
+     *
+     *           if (fromColumnMetadata) {
+     *             fromColumnMetadata.dataTypeSchema = enumSchema;
+     *             fromColumnMetadata.dataType = dataType;
+     *           }
+     *
+     *           if (enumColumnMetadata) {
+     *             enumColumnMetadata.dataTypeSchema = enumSchema;
+     *             enumColumnMetadata.dataType = dataType;
+     *           }
+     *         }
+     *       },
+     *     ),
+     *   );
+     *
+     *   return metadata;
+     * },
+     * ```
+     */
+    postprocess?: PostprocessFunction<DB>;
+    /**
+     * Print the generated output to the terminal instead of a file.
+     */
+    print?: boolean;
+    /**
+     * Generate runtime enums instead of string unions for PostgreSQL enums.
+     */
+    runtimeEnums?: boolean | RuntimeEnumsStyle;
+    /**
+     * Specify a custom serializer.
+     */
+    serializer?: Serializer;
+    /**
+     * Singularize generated table names, e.g. `BlogPost` instead of `BlogPosts`.
+     */
+    singularize?: boolean | Record<string, string>;
+    /**
+     * Skip the autogenerated file comment at the top of the generated file.
+     */
+    skipAutogeneratedFileComment?: boolean;
+    /**
+     * Specify type mappings for database types, in JSON format.
+     *
+     * @example
+     * ```ts
+     * {
+     *   timestamptz: 'Temporal.Instant',
+     *   tstzrange: 'InstantRange',
+     * }
+     * ```
+     */
+    typeMapping?: Record<string, string>;
+    /**
+     * Generate code using the TypeScript 3.8+ `import type` syntax.
+     *
+     * @default true
+     */
+    typeOnlyImports?: boolean;
+    /**
+     * Set the database connection string URL. This may point to an environment
+     * variable.
+     *
+     * @default 'env(DATABASE_URL)'
+     */
+    url?: string;
+    /**
+     * Verify that the generated types are up-to-date.
+     */
+    verify?: boolean;
+};
+export type CustomImports = Record<string, string>;
+export type DialectName = z.infer<typeof dialectNameSchema>;
+type LoadConfigResult = {
+    config: unknown;
+    filepath: string;
+};
+export declare const dialectNameSchema: z.ZodEnum<{
+    "kysely-bun-sqlite": "kysely-bun-sqlite";
+    "bun-sqlite": "bun-sqlite";
+    libsql: "libsql";
+    mssql: "mssql";
+    mysql: "mysql";
+    postgres: "postgres";
+    sqlite: "sqlite";
+    "worker-bun-sqlite": "worker-bun-sqlite";
+}>;
+export declare const configSchema: z.ZodObject<{
+    camelCase: z.ZodOptional<z.ZodBoolean>;
+    customImports: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    dateParser: z.ZodOptional<z.ZodEnum<{
+        string: "string";
+        timestamp: "timestamp";
+    }>>;
+    defaultSchemas: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    dialect: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
+        "kysely-bun-sqlite": "kysely-bun-sqlite";
+        "bun-sqlite": "bun-sqlite";
+        libsql: "libsql";
+        mssql: "mssql";
+        mysql: "mysql";
+        postgres: "postgres";
+        sqlite: "sqlite";
+        "worker-bun-sqlite": "worker-bun-sqlite";
+    }>>>;
+    domains: z.ZodOptional<z.ZodBoolean>;
+    envFile: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    excludePattern: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    includePattern: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    logger: z.ZodOptional<z.ZodCustom<Logger, Logger>>;
+    logLevel: z.ZodOptional<z.ZodEnum<{
+        error: "error";
+        debug: "debug";
+        silent: "silent";
+        warn: "warn";
+        info: "info";
+    }>>;
+    numericParser: z.ZodOptional<z.ZodEnum<{
+        string: "string";
+        number: "number";
+        "number-or-string": "number-or-string";
+    }>>;
+    outFile: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    overrides: z.ZodOptional<z.ZodOptional<z.ZodObject<{
+        columns: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<readonly [z.ZodCustom<ArrayExpressionNode, ArrayExpressionNode>, z.ZodCustom<ExtendsClauseNode, ExtendsClauseNode>, z.ZodCustom<GenericExpressionNode, GenericExpressionNode>, z.ZodCustom<IdentifierNode, IdentifierNode>, z.ZodCustom<InferClauseNode, InferClauseNode>, z.ZodCustom<LiteralNode<string | number>, LiteralNode<string | number>>, z.ZodCustom<MappedTypeNode, MappedTypeNode>, z.ZodCustom<ObjectExpressionNode, ObjectExpressionNode>, z.ZodCustom<RawExpressionNode, RawExpressionNode>, z.ZodCustom<UnionExpressionNode, UnionExpressionNode>, z.ZodString]>>>;
+    }, z.core.$strip>>>;
+    partitions: z.ZodOptional<z.ZodBoolean>;
+    postprocess: z.ZodOptional<z.ZodFunction<z.core.$ZodFunctionArgs, z.core.$ZodFunctionOut>>;
+    print: z.ZodOptional<z.ZodBoolean>;
+    runtimeEnums: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodEnum<{
+        "screaming-snake-case": "screaming-snake-case";
+        "pascal-case": "pascal-case";
+    }>]>>;
+    serializer: z.ZodOptional<z.ZodObject<{
+        serializeFile: z.ZodFunction<z.ZodTuple<[z.ZodCustom<DatabaseMetadata, DatabaseMetadata>, z.ZodCustom<IntrospectorDialect, IntrospectorDialect>, z.ZodOptional<z.ZodObject<{
+            camelCase: z.ZodOptional<z.ZodBoolean>;
+            customImports: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+            defaultSchemas: z.ZodOptional<z.ZodArray<z.ZodString>>;
+            overrides: z.ZodOptional<z.ZodOptional<z.ZodObject<{
+                columns: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<readonly [z.ZodCustom<ArrayExpressionNode, ArrayExpressionNode>, z.ZodCustom<ExtendsClauseNode, ExtendsClauseNode>, z.ZodCustom<GenericExpressionNode, GenericExpressionNode>, z.ZodCustom<IdentifierNode, IdentifierNode>, z.ZodCustom<InferClauseNode, InferClauseNode>, z.ZodCustom<LiteralNode<string | number>, LiteralNode<string | number>>, z.ZodCustom<MappedTypeNode, MappedTypeNode>, z.ZodCustom<ObjectExpressionNode, ObjectExpressionNode>, z.ZodCustom<RawExpressionNode, RawExpressionNode>, z.ZodCustom<UnionExpressionNode, UnionExpressionNode>, z.ZodString]>>>;
+            }, z.core.$strip>>>;
+            typeMapping: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+        }, z.core.$strip>>], null>, z.ZodString>;
+    }, z.core.$strip>>;
+    singularize: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodRecord<z.ZodString, z.ZodString>]>>;
+    skipAutogeneratedFileComment: z.ZodOptional<z.ZodBoolean>;
+    typeMapping: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    typeOnlyImports: z.ZodOptional<z.ZodBoolean>;
+    url: z.ZodOptional<z.ZodString>;
+    verify: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>;
+export declare const defineConfig: <DB = any>(config: Config<DB>) => Config<DB>;
+export declare const loadConfig: (config?: {
+    configFile?: string;
+}) => LoadConfigResult | null;
+export {};

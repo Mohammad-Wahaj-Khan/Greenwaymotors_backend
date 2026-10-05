@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import type { DatabaseConnection } from '../../core/db/database.js';
 import { validationError } from '../../core/errors/http-errors.js';
+import { getRequestContext } from '../../core/http/request-context.js';
 import { validateBody } from '../../middleware/validate.middleware.js';
 import {
   createRoleSchema,
@@ -37,14 +38,17 @@ export function createRbacRouter(database: DatabaseConnection): Router {
   });
 
   router.get('/roles', async (_request, response) =>
-    response.json({ data: await service.listRoles() })
+    response.json({
+      data: await service.listRoles(),
+      meta: { requestId: getRequestContext()?.requestId }
+    })
   );
   router.post('/roles', validateBody(createRoleSchema), async (request, response) => {
     const role = await service.createRole(
       request.body as { name: string; description?: string | null },
       { ...audit(request), action: 'rbac.role.create', entityType: 'role' }
     );
-    response.status(201).json({ data: role });
+    response.status(201).json({ data: role, meta: { requestId: getRequestContext()?.requestId } });
   });
   router.patch('/roles/:id', validateBody(updateRoleSchema), async (request, response) => {
     const role = await service.updateRole(
@@ -52,10 +56,13 @@ export function createRbacRouter(database: DatabaseConnection): Router {
       request.body as { name?: string; description?: string | null },
       { ...audit(request), action: 'rbac.role.update', entityType: 'role' }
     );
-    response.json({ data: role });
+    response.json({ data: role, meta: { requestId: getRequestContext()?.requestId } });
   });
   router.get('/permissions', async (_request, response) =>
-    response.json({ data: await service.listPermissions() })
+    response.json({
+      data: await service.listPermissions(),
+      meta: { requestId: getRequestContext()?.requestId }
+    })
   );
   router.put(
     '/roles/:id/permissions',

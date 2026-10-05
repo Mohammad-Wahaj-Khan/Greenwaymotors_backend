@@ -18,11 +18,14 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:types": "tsx scripts/generate-db-types.ts",
-    "db:types:check": "kysely-codegen --verify --dialect=postgres --env-file=.env --out-file=src/generated/database.types.ts",
+    "db:types:check": "tsx scripts/generate-db-types.ts --verify",
+    "openapi:validate": "tsx scripts/validate-openapi.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "argon2": "^0.45.1",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
@@ -37,9 +40,12 @@
     "pg": "^8.16.3",
     "pino": "^9.11.0",
     "pino-http": "^10.5.0",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.9.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
     "@eslint/js": "^9.39.1",
     "@types/compression": "^1.8.1",
     "@types/cookie-parser": "^1.4.9",
@@ -49,6 +55,7 @@
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
+    "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.39.1",
     "kysely-codegen": "^0.20.0",
     "prettier": "^3.6.2",

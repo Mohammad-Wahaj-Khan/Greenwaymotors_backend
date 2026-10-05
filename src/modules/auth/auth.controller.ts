@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import type { Environment } from '../../config/env.js';
 import { forbiddenError } from '../../core/errors/http-errors.js';
+import { getRequestContext } from '../../core/http/request-context.js';
 import type { EmailService } from '../../integrations/email/email.service.js';
 import type { AuthService } from './auth.service.js';
 import type { LoginInput, RegisterCustomerInput, UpdateProfileInput } from './auth.schema.js';
@@ -12,7 +13,7 @@ function sessionCookieOptions(environment: Environment) {
     httpOnly: true,
     secure: environment.NODE_ENV === 'production',
     sameSite: 'lax' as const,
-    path: '/auth',
+    path: '/api/v1/auth',
     ...(environment.NODE_ENV === 'production' ? { domain: environment.COOKIE_DOMAIN } : {}),
     maxAge: environment.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
   };
@@ -86,13 +87,18 @@ export function createAuthController(
       email.sendVerificationEmail({ email: result.user.email, token: result.verificationToken }),
       'verification email delivery failed'
     );
-    response.status(201).json({ data: result.user });
+    response
+      .status(201)
+      .json({ data: result.user, meta: { requestId: getRequestContext()?.requestId } });
   };
 
   const login: RequestHandler = async (request, response) => {
     const session = await service.login(request.body as LoginInput, requestMetadata(request));
     response.cookie(refreshCookieName, session.refreshToken, sessionCookieOptions(environment));
-    response.json({ data: { accessToken: session.accessToken, user: session.user } });
+    response.json({
+      data: { accessToken: session.accessToken, user: session.user },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const refresh: RequestHandler = async (request, response) => {
@@ -103,20 +109,29 @@ export function createAuthController(
     }
     const session = await service.refresh(token, requestMetadata(request));
     response.cookie(refreshCookieName, session.refreshToken, sessionCookieOptions(environment));
-    response.json({ data: { accessToken: session.accessToken, user: session.user } });
+    response.json({
+      data: { accessToken: session.accessToken, user: session.user },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const logout: RequestHandler = async (request, response) => {
     requireTrustedOrigin(request, environment);
     await service.logout(readRefreshCookie(request));
     response.clearCookie(refreshCookieName, sessionCookieOptions(environment));
-    response.json({ data: { loggedOut: true } });
+    response.json({
+      data: { loggedOut: true },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const logoutAll: RequestHandler = async (request, response) => {
     await service.logoutAll(request.auth!.user.id);
     response.clearCookie(refreshCookieName, sessionCookieOptions(environment));
-    response.json({ data: { loggedOut: true } });
+    response.json({
+      data: { loggedOut: true },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const requestVerification: RequestHandler = async (request, response) => {
@@ -128,13 +143,17 @@ export function createAuthController(
       deliver(request, email.sendVerificationEmail(record), 'verification email delivery failed');
     }
     response.json({
-      data: { message: 'If an eligible account exists, a verification email will be sent.' }
+      data: { message: 'If an eligible account exists, a verification email will be sent.' },
+      meta: { requestId: getRequestContext()?.requestId }
     });
   };
 
   const confirmVerification: RequestHandler = async (request, response) => {
     await service.confirmEmailVerification((request.body as { token: string }).token);
-    response.json({ data: { verified: true } });
+    response.json({
+      data: { verified: true },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const forgotPassword: RequestHandler = async (request, response) => {
@@ -150,18 +169,25 @@ export function createAuthController(
       );
     }
     response.json({
-      data: { message: 'If an eligible account exists, a password reset email will be sent.' }
+      data: { message: 'If an eligible account exists, a password reset email will be sent.' },
+      meta: { requestId: getRequestContext()?.requestId }
     });
   };
 
   const resetPassword: RequestHandler = async (request, response) => {
     const input = request.body as { token: string; newPassword: string };
     await service.resetPassword(input.token, input.newPassword);
-    response.json({ data: { passwordReset: true } });
+    response.json({
+      data: { passwordReset: true },
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const me: RequestHandler = (request, response) => {
-    response.json({ data: request.auth!.user });
+    response.json({
+      data: request.auth!.user,
+      meta: { requestId: getRequestContext()?.requestId }
+    });
   };
 
   const updateMe: RequestHandler = async (request, response) => {
@@ -169,7 +195,7 @@ export function createAuthController(
       request.auth!.user.id,
       request.body as UpdateProfileInput
     );
-    response.json({ data: user });
+    response.json({ data: user, meta: { requestId: getRequestContext()?.requestId } });
   };
 
   return {

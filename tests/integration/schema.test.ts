@@ -193,6 +193,155 @@ integration('initial SQL schema', () => {
     ).rejects.toMatchObject({ code: '23505' });
   });
 
+  it('enforces one active reservation per exact vehicle', async () => {
+    const database = requirePool();
+    const { vehicleId } = await insertVehicle();
+    const staff = await database.query<{ id: string }>(
+      `INSERT INTO users (user_type, email, password_hash, full_name)
+       VALUES ('staff', $1, 'hash', 'Salesperson') RETURNING id`,
+      [`sales-${randomUUID()}@example.test`]
+    );
+    const lead = await database.query<{ id: string }>(
+      `INSERT INTO leads (vehicle_id, vehicle_snapshot, contact_name, contact_email)
+       VALUES ($1, '{}'::jsonb, 'Buyer', $2) RETURNING id`,
+      [vehicleId, `buyer-${randomUUID()}@example.test`]
+    );
+    const values = [vehicleId, lead.rows[0]!.id, staff.rows[0]!.id];
+    const insert = `INSERT INTO vehicle_reservations (vehicle_id, lead_id, created_by, expires_at)
+      VALUES ($1, $2, $3, now() + interval '1 day')`;
+    await database.query(insert, values);
+    await expect(database.query(insert, values)).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('keeps quote versions and their line items immutable and numbered uniquely', async () => {
+    const database = requirePool();
+    const { vehicleId } = await insertVehicle();
+    const staff = await database.query<{ id: string }>(
+      `INSERT INTO users (user_type, email, password_hash, full_name)
+       VALUES ('staff', $1, 'hash', 'Salesperson') RETURNING id`,
+      [`quote-staff-${randomUUID()}@example.test`]
+    );
+    const lead = await database.query<{ id: string }>(
+      `INSERT INTO leads (vehicle_id, vehicle_snapshot, contact_name, contact_email)
+       VALUES ($1, '{}'::jsonb, 'Buyer', $2) RETURNING id`,
+      [vehicleId, `quote-buyer-${randomUUID()}@example.test`]
+    );
+    const quote = await database.query<{ id: string }>(
+      `INSERT INTO quotes (lead_id, vehicle_id, currency_code, created_by)
+       VALUES ($1, $2, 'USD', $3) RETURNING id`,
+      [lead.rows[0]!.id, vehicleId, staff.rows[0]!.id]
+    );
+    const values = [quote.rows[0]!.id, staff.rows[0]!.id];
+    const version = await database.query<{ id: string }>(
+      `INSERT INTO quote_versions (quote_id, version_no, vehicle_snapshot, customer_total_minor, created_by)
+       VALUES ($1, 1, '{}'::jsonb, 120000, $2) RETURNING id`,
+      values
+    );
+    await expect(
+      database.query(
+        `INSERT INTO quote_versions (quote_id, version_no, vehicle_snapshot, customer_total_minor, created_by)
+       VALUES ($1, 1, '{}'::jsonb, 110000, $2)`,
+        values
+      )
+    ).rejects.toMatchObject({ code: '23505' });
+    await expect(
+      database.query('UPDATE quote_versions SET customer_total_minor = 1 WHERE id = $1', [
+        version.rows[0]!.id
+      ])
+    ).rejects.toThrow();
+    const item = await database.query<{ id: string }>(
+      `INSERT INTO quote_items (quote_version_id, kind, label, quantity, unit_amount_minor, line_total_minor)
+       VALUES ($1, 'vehicle', 'Vehicle', 1, 120000, 120000) RETURNING id`,
+      [version.rows[0]!.id]
+    );
+    await expect(
+      database.query('DELETE FROM quote_items WHERE id = $1', [item.rows[0]!.id])
+    ).rejects.toThrow();
+    await database.query(
+      "UPDATE quotes SET current_version_no = 1, status = 'sent', sent_at = now() WHERE id = $1",
+      [quote.rows[0]!.id]
+    );
+    await expect(
+      database.query(
+        `INSERT INTO quote_items (quote_version_id, kind, label, quantity, unit_amount_minor, line_total_minor)
+       VALUES ($1, 'freight', 'Late freight', 1, 1000, 1000)`,
+        [version.rows[0]!.id]
+      )
+    ).rejects.toThrow();
+    const nextVersion = await database.query<{ id: string }>(
+      `INSERT INTO quote_versions (quote_id, version_no, vehicle_snapshot, customer_total_minor, created_by)
+       VALUES ($1, 2, '{}'::jsonb, 121000, $2) RETURNING id`,
+      values
+    );
+    await database.query(
+      `INSERT INTO quote_items (quote_version_id, kind, label, quantity, unit_amount_minor, line_total_minor)
+       VALUES ($1, 'freight', 'Revised freight', 1, 1000, 1000)`,
+      [nextVersion.rows[0]!.id]
+    );
+  });
+
+  it('rejects quote, reservation and deal links to another exact vehicle', async () => {
+    const database = requirePool();
+    const first = await insertVehicle();
+    const second = await database.query<{ id: string }>(
+      `INSERT INTO vehicles (make_id, model_id, year, stock_country_id, title)
+       SELECT make_id, model_id, year, stock_country_id, 'Second exact vehicle'
+       FROM vehicles WHERE id = $1 RETURNING id`,
+      [first.vehicleId]
+    );
+    const staff = await database.query<{ id: string }>(
+      `INSERT INTO users (user_type, email, password_hash, full_name)
+       VALUES ('staff', $1, 'hash', 'Salesperson') RETURNING id`,
+      [`deal-staff-${randomUUID()}@example.test`]
+    );
+    const country = await database.query<{ id: number }>(
+      `INSERT INTO countries (iso2, iso3, name) VALUES ('PK', 'PAK', $1) RETURNING id`,
+      [`Deal country ${randomUUID()}`]
+    );
+    const market = await database.query<{ id: string }>(
+      `INSERT INTO markets (country_id, slug, currency_code, locale)
+       VALUES ($1, $2, 'USD', 'en-PK') RETURNING id`,
+      [country.rows[0]!.id, `deal-${randomUUID()}`]
+    );
+    const lead = await database.query<{ id: string }>(
+      `INSERT INTO leads (vehicle_id, vehicle_snapshot, contact_name, contact_email)
+       VALUES ($1, '{}'::jsonb, 'Buyer', $2) RETURNING id`,
+      [first.vehicleId, `deal-buyer-${randomUUID()}@example.test`]
+    );
+    await expect(
+      database.query(
+        `INSERT INTO quotes (lead_id, vehicle_id, currency_code, created_by)
+       VALUES ($1, $2, 'USD', $3)`,
+        [lead.rows[0]!.id, second.rows[0]!.id, staff.rows[0]!.id]
+      )
+    ).rejects.toMatchObject({ code: '23503' });
+    await expect(
+      database.query(
+        `INSERT INTO vehicle_reservations (vehicle_id, lead_id, created_by, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 day')`,
+        [second.rows[0]!.id, lead.rows[0]!.id, staff.rows[0]!.id]
+      )
+    ).rejects.toMatchObject({ code: '23503' });
+    const dealValues = [lead.rows[0]!.id, first.vehicleId, market.rows[0]!.id, staff.rows[0]!.id];
+    const dealSql = `INSERT INTO deals (lead_id, vehicle_id, market_id, owner_salesperson_id, agreed_amount_minor, currency_code)
+      VALUES ($1, $2, $3, $4, 100000, 'USD')`;
+    await database.query(dealSql, dealValues);
+    await expect(database.query(dealSql, dealValues)).rejects.toMatchObject({ code: '23505' });
+    const competingLead = await database.query<{ id: string }>(
+      `INSERT INTO leads (vehicle_id, vehicle_snapshot, contact_name, contact_email)
+       VALUES ($1, '{}'::jsonb, 'Second buyer', $2) RETURNING id`,
+      [first.vehicleId, `second-buyer-${randomUUID()}@example.test`]
+    );
+    await expect(
+      database.query(dealSql, [
+        competingLead.rows[0]!.id,
+        first.vehicleId,
+        market.rows[0]!.id,
+        staff.rows[0]!.id
+      ])
+    ).rejects.toMatchObject({ code: '23505' });
+  });
+
   it('updates updated_at through the supplied trigger', async () => {
     const database = requirePool();
     const inserted = await database.query<{ id: string; updated_at: Date }>(

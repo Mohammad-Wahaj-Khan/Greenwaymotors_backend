@@ -7,6 +7,8 @@ import type { ColumnType } from "kysely";
 
 export type ContactMethod = "email" | "phone" | "whatsapp";
 
+export type DealStatus = "awaiting_customer" | "cancelled" | "completed" | "processing" | "ready_for_delivery" | "source_confirmed" | "source_confirming" | "won";
+
 export type DriveType = "4wd" | "awd" | "fwd" | "rwd";
 
 export type FuelType = "cng" | "diesel" | "electric" | "hybrid" | "lpg" | "other" | "petrol" | "plug_in_hybrid";
@@ -16,6 +18,8 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   : ColumnType<T, T | undefined, T>;
 
 export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
+
+export type InventorySourceStatus = "active" | "blocked" | "inactive";
 
 export type Json = JsonValue;
 
@@ -31,9 +35,21 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type LeadActivityType = "assigned" | "call" | "created" | "email" | "note" | "status_changed" | "whatsapp";
 
-export type LeadStatus = "contacted" | "lost" | "negotiating" | "new" | "quote_sent" | "spam" | "won";
+export type LeadStatus = "cancelled" | "contacted" | "lost" | "negotiating" | "new" | "qualified" | "quote_preparing" | "quote_sent" | "spam" | "unresponsive" | "won";
+
+export type MarketStatus = "active" | "inactive";
 
 export type MediaType = "image" | "video";
+
+export type QuoteItemKind = "discount" | "documentation" | "freight" | "inspection" | "insurance" | "other" | "service" | "tax" | "vehicle";
+
+export type QuoteItemVisibility = "customer" | "internal";
+
+export type QuoteStatus = "accepted" | "cancelled" | "draft" | "expired" | "rejected" | "sent" | "superseded";
+
+export type QuoteVersionStatus = "accepted" | "cancelled" | "draft" | "expired" | "rejected" | "sent" | "superseded";
+
+export type ReservationStatus = "active" | "converted" | "expired" | "released";
 
 export type SteeringType = "lhd" | "rhd";
 
@@ -43,9 +59,13 @@ export type TokenPurpose = "email_verification" | "password_reset";
 
 export type TransmissionType = "automatic" | "cvt" | "manual" | "semi_automatic";
 
+export type UploadIntentStatus = "completed" | "pending";
+
 export type UserStatus = "active" | "deleted" | "suspended";
 
 export type UserType = "customer" | "staff";
+
+export type VehicleAvailabilityStatus = "available" | "reserved" | "sold" | "sourcing_hold" | "unavailable";
 
 export type VehicleCondition = "new" | "used";
 
@@ -68,6 +88,14 @@ export interface BodyTypes {
   slug: string;
 }
 
+export interface CommercialIdempotency {
+  created_at: Generated<Timestamp>;
+  idempotency_key: string;
+  payload_hash: string;
+  result: Json;
+  scope: string;
+}
+
 export interface Countries {
   id: Generated<number>;
   is_active: Generated<boolean>;
@@ -76,6 +104,40 @@ export interface Countries {
   name: string;
   phone_code: string | null;
   region: string | null;
+}
+
+export interface Deals {
+  accepted_quote_id: string | null;
+  accepted_quote_version_id: string | null;
+  agreed_amount_minor: Int8;
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  commercial_terms: string | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  currency_code: string;
+  customer_id: string | null;
+  customer_snapshot: Json | null;
+  id: Generated<string>;
+  internal_notes: string | null;
+  lead_id: string;
+  margin_minor: Int8 | null;
+  market_id: string;
+  market_snapshot: Json | null;
+  owner_salesperson_id: string;
+  reference_no: Generated<string>;
+  reservation_id: string | null;
+  salesperson_snapshot: Json | null;
+  source_confirmation_reference: string | null;
+  source_confirmed_at: Timestamp | null;
+  source_cost_minor: Int8 | null;
+  source_id: string | null;
+  source_snapshot: Json | null;
+  status: Generated<DealStatus>;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
+  vehicle_snapshot: Json | null;
+  won_at: Generated<Timestamp>;
 }
 
 export interface Favorites {
@@ -90,19 +152,43 @@ export interface Features {
   name: string;
 }
 
+export interface FulfillmentTasks {
+  assigned_to: string | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  deal_id: string;
+  due_at: Timestamp | null;
+  id: Generated<string>;
+  notes: string | null;
+  status: Generated<string>;
+  task_type: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface InventorySources {
+  address: string | null;
   city: string | null;
   company_name: string;
   contact_name: string | null;
   country_id: number | null;
   created_at: Generated<Timestamp>;
+  created_by: string | null;
   email: string | null;
   id: Generated<string>;
+  internal_notes: string | null;
   is_active: Generated<boolean>;
   notes: string | null;
+  payment_terms: string | null;
   phone: string | null;
   reference: string | null;
+  reliability_rating: number | null;
+  source_code: string | null;
+  status: Generated<InventorySourceStatus>;
   updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  website: string | null;
+  whatsapp: string | null;
 }
 
 export interface LeadActivities {
@@ -125,9 +211,17 @@ export interface LeadFollowups {
   note: string | null;
 }
 
+export interface LeadIdempotency {
+  created_at: Generated<Timestamp>;
+  idempotency_key: string;
+  lead_id: string;
+  payload_hash: string;
+}
+
 export interface Leads {
   assigned_at: Timestamp | null;
   assigned_to: string | null;
+  city: string | null;
   closed_at: Timestamp | null;
   consent_given: Generated<boolean>;
   contact_email: string;
@@ -137,19 +231,32 @@ export interface Leads {
   created_at: Generated<Timestamp>;
   customer_country_id: number | null;
   customer_id: string | null;
+  customer_language: string | null;
   destination_country_id: number | null;
   destination_port: string | null;
   first_contacted_at: Timestamp | null;
   id: Generated<string>;
   ip_address: string | null;
+  landing_page: string | null;
   lost_reason: string | null;
+  lost_reason_code: string | null;
+  market_id: string | null;
+  marketing_consent: Generated<boolean>;
   message: string | null;
+  possible_duplicate_of: string | null;
   preferred_contact: ContactMethod | null;
+  qualification_notes: string | null;
   reference_no: Generated<string>;
+  referrer: string | null;
   source: Generated<string>;
   status: Generated<LeadStatus>;
   updated_at: Generated<Timestamp>;
   user_agent: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_medium: string | null;
+  utm_source: string | null;
+  utm_term: string | null;
   vehicle_id: string;
   vehicle_snapshot: Json;
 }
@@ -160,6 +267,22 @@ export interface Makes {
   logo_url: string | null;
   name: string;
   slug: string;
+}
+
+export interface Markets {
+  country_id: number;
+  created_at: Generated<Timestamp>;
+  currency_code: string;
+  id: Generated<string>;
+  locale: string;
+  sales_email: string | null;
+  sales_phone: string | null;
+  sales_whatsapp: string | null;
+  seo_description: string | null;
+  seo_title: string | null;
+  slug: string;
+  status: Generated<MarketStatus>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface Models {
@@ -187,6 +310,63 @@ export interface Permissions {
   id: Generated<number>;
 }
 
+export interface QuoteItems {
+  id: Generated<string>;
+  kind: QuoteItemKind;
+  label: string;
+  line_total_minor: Int8;
+  quantity: number;
+  quote_version_id: string;
+  sort_order: Generated<number>;
+  unit_amount_minor: Int8;
+  visibility: Generated<QuoteItemVisibility>;
+}
+
+export interface Quotes {
+  accepted_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  currency_code: string;
+  current_version_no: Generated<number>;
+  id: Generated<string>;
+  lead_id: string;
+  reference_no: Generated<string>;
+  sent_at: Timestamp | null;
+  sent_by: string | null;
+  status: Generated<QuoteStatus>;
+  updated_at: Generated<Timestamp>;
+  valid_until: Timestamp | null;
+  vehicle_id: string;
+}
+
+export interface QuoteVersionLifecycle {
+  changed_at: Generated<Timestamp>;
+  changed_by: string | null;
+  quote_version_id: string;
+  reason: string | null;
+  status: Generated<QuoteVersionStatus>;
+}
+
+export interface QuoteVersions {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  customer_notes: string | null;
+  customer_total_minor: Int8;
+  estimated_margin_bps: number | null;
+  estimated_margin_minor: Int8 | null;
+  id: Generated<string>;
+  internal_notes: string | null;
+  internal_total_cost_minor: Int8 | null;
+  other_cost_minor: Int8 | null;
+  quote_id: string;
+  shipping_cost_minor: Int8 | null;
+  source_cost_minor: Int8 | null;
+  terms_text: string | null;
+  valid_until: Timestamp | null;
+  vehicle_snapshot: Json;
+  version_no: number;
+}
+
 export interface RolePermissions {
   permission_id: number;
   role_id: number;
@@ -211,6 +391,19 @@ export interface SavedSearches {
 export interface SchemaMigrations {
   applied_at: Generated<Timestamp>;
   name: string;
+}
+
+export interface UploadIntents {
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  mime_type: string;
+  object_key: string;
+  purpose: string;
+  size_bytes: Int8;
+  status: Generated<UploadIntentStatus>;
 }
 
 export interface UserRoles {
@@ -262,20 +455,52 @@ export interface VehicleFeatures {
   vehicle_id: string;
 }
 
+export interface VehicleMarkets {
+  available_from: Timestamp | null;
+  available_until: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  featured: Generated<boolean>;
+  is_active: Generated<boolean>;
+  market_id: string;
+  market_notes: string | null;
+  priority: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
+}
+
 export interface VehicleMedia {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   is_primary: Generated<boolean>;
+  mime_type: string | null;
+  size_bytes: Int8 | null;
   sort_order: Generated<number>;
+  storage_key: string | null;
   thumb_url: string | null;
   type: Generated<MediaType>;
+  upload_intent_id: string | null;
   url: string;
   vehicle_id: string;
 }
 
+export interface VehicleReservations {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  lead_id: string;
+  quote_id: string | null;
+  released_at: Timestamp | null;
+  status: Generated<ReservationStatus>;
+  vehicle_id: string;
+}
+
 export interface Vehicles {
+  availability_status: Generated<VehicleAvailabilityStatus>;
   body_type_id: number | null;
   condition: Generated<VehicleCondition>;
+  cost_notes: string | null;
   created_at: Generated<Timestamp>;
   created_by: string | null;
   deleted_at: Timestamp | null;
@@ -283,6 +508,7 @@ export interface Vehicles {
   doors: number | null;
   drive: DriveType | null;
   engine_cc: number | null;
+  estimated_local_cost_minor: Int8 | null;
   exterior_color: string | null;
   fuel: FuelType | null;
   id: Generated<string>;
@@ -292,11 +518,15 @@ export interface Vehicles {
   mileage_km: number | null;
   model_id: number;
   published_at: Timestamp | null;
+  purchase_cost_currency: string | null;
+  purchase_cost_minor: Int8 | null;
   reference_no: Generated<string>;
+  reserved_at: Timestamp | null;
   review_notes: string | null;
   reviewed_at: Timestamp | null;
   reviewed_by: string | null;
   seats: number | null;
+  sold_at: Timestamp | null;
   status: Generated<VehicleStatus>;
   steering: SteeringType | null;
   stock_city: string | null;
@@ -314,26 +544,38 @@ export interface Vehicles {
 export interface DB {
   audit_logs: AuditLogs;
   body_types: BodyTypes;
+  commercial_idempotency: CommercialIdempotency;
   countries: Countries;
+  deals: Deals;
   favorites: Favorites;
   features: Features;
+  fulfillment_tasks: FulfillmentTasks;
   inventory_sources: InventorySources;
   lead_activities: LeadActivities;
   lead_followups: LeadFollowups;
+  lead_idempotency: LeadIdempotency;
   leads: Leads;
   makes: Makes;
+  markets: Markets;
   models: Models;
   notifications: Notifications;
   permissions: Permissions;
+  quote_items: QuoteItems;
+  quote_version_lifecycle: QuoteVersionLifecycle;
+  quote_versions: QuoteVersions;
+  quotes: Quotes;
   role_permissions: RolePermissions;
   roles: Roles;
   saved_searches: SavedSearches;
   schema_migrations: SchemaMigrations;
+  upload_intents: UploadIntents;
   user_roles: UserRoles;
   user_sessions: UserSessions;
   user_tokens: UserTokens;
   users: Users;
   vehicle_features: VehicleFeatures;
+  vehicle_markets: VehicleMarkets;
   vehicle_media: VehicleMedia;
+  vehicle_reservations: VehicleReservations;
   vehicles: Vehicles;
 }
