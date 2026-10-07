@@ -40,6 +40,8 @@ const environmentSchema = z
     S3_BUCKET: z.string().min(1),
     S3_ACCESS_KEY_ID: z.string().min(1),
     S3_SECRET_ACCESS_KEY: z.string().min(1),
+    STORAGE_PROVIDER: z.enum(['s3', 'cloudinary']).default('s3'),
+    CLOUDINARY_URL: z.string().optional(),
     MAIL_FROM: z.email(),
     MAIL_PROVIDER: z.string().min(1),
     SMTP_FROM: z
@@ -63,6 +65,24 @@ const environmentSchema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')
   })
   .superRefine((environment, context) => {
+    if (environment.STORAGE_PROVIDER === 'cloudinary') {
+      try {
+        const cloudinaryUrl = new URL(environment.CLOUDINARY_URL ?? '');
+        if (
+          cloudinaryUrl.protocol !== 'cloudinary:' ||
+          !cloudinaryUrl.hostname ||
+          !cloudinaryUrl.username ||
+          !cloudinaryUrl.password
+        )
+          throw new Error('Invalid Cloudinary URL.');
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          path: ['CLOUDINARY_URL'],
+          message: 'A valid CLOUDINARY_URL is required when STORAGE_PROVIDER=cloudinary.'
+        });
+      }
+    }
     if (Boolean(environment.SMTP_USER) !== Boolean(environment.SMTP_PASSWORD)) {
       context.addIssue({
         code: 'custom',

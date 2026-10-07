@@ -1154,6 +1154,11 @@ paths:
       tags:
         - Uploads
       operationId: adminPresignUpload
+      description: >-
+        Returns provider-specific direct upload instructions. With STORAGE_PROVIDER=s3, send a PUT
+        to uploadUrl using headers. With STORAGE_PROVIDER=cloudinary, send a multipart POST to
+        uploadUrl with the returned fields and file field; never expose CLOUDINARY_URL or its API
+        secret in browser code. Complete the upload through /uploads/complete before attaching it.
       security:
         - bearerAuth: []
       requestBody:
@@ -1164,7 +1169,17 @@ paths:
               $ref: '#/components/schemas/PresignUploadInput'
       responses:
         '201':
-          $ref: '#/components/responses/Data'
+          description: Provider-specific direct upload instructions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PresignedUpload'
+                  meta:
+                    $ref: '#/components/schemas/RequestMeta'
         '422':
           $ref: '#/components/responses/Problem'
   /api/v1/admin/uploads/complete:
@@ -7041,6 +7056,31 @@ components:
           type: integer
           minimum: 1
           maximum: 104857600
+    PresignedUpload:
+      type: object
+      required: [uploadIntentId, uploadUrl, method, headers, expiresAt]
+      properties:
+        uploadIntentId:
+          type: string
+          format: uuid
+        uploadUrl:
+          type: string
+          format: uri
+        method:
+          type: string
+          enum: [PUT, POST]
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+          description: Present for Cloudinary; submit each returned field in the multipart POST.
+        expiresAt:
+          type: string
+          format: date-time
     CompleteUploadInput:
       type: object
       additionalProperties: false

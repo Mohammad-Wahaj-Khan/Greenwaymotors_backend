@@ -76,14 +76,12 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
       })
       .returning(['id'])
       .executeTakeFirstOrThrow();
-    const uploadUrl = await storage.presignPut(key, input.mimeType, input.sizeBytes);
+    const upload = await storage.createUpload(key, input.mimeType, input.sizeBytes);
     sendData(
       res,
       {
         uploadIntentId: intent.id,
-        uploadUrl,
-        method: 'PUT',
-        headers: { 'Content-Type': input.mimeType },
+        ...upload,
         expiresAt: expiresAt.toISOString()
       },
       201
@@ -103,7 +101,7 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
       return;
     }
     if (intent.expires_at <= new Date()) throw conflictError('Upload intent expired.');
-    const object = await storage.head(intent.object_key);
+    const object = await storage.head(intent.object_key, intent.mime_type);
     if (object.mimeType !== intent.mime_type || object.sizeBytes !== Number(intent.size_bytes))
       throw validationError('Uploaded object type or size differs from the authorized intent.');
     await db
@@ -165,7 +163,7 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
               mime_type: intent.mime_type,
               size_bytes: intent.size_bytes,
               type: intent.mime_type === 'video/mp4' ? 'video' : 'image',
-              url: storage.publicUrl(intent.object_key),
+              url: storage.publicUrl(intent.object_key, intent.mime_type),
               sort_order: input.sortOrder,
               is_primary: input.isPrimary
             })
