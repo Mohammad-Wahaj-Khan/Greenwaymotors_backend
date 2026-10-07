@@ -424,6 +424,11 @@ export class AuthService {
   public async resetPassword(token: string, newPassword: string): Promise<void> {
     const passwordHash = await hashPassword(newPassword);
     await this.consumeOneTimeToken(token, 'password_reset', async (transaction, userId) => {
+      const user = await transaction
+        .selectFrom('users')
+        .select('email')
+        .where('id', '=', userId)
+        .executeTakeFirstOrThrow();
       await transaction
         .updateTable('users')
         .set({ password_hash: passwordHash })
@@ -434,6 +439,13 @@ export class AuthService {
         .set({ revoked_at: new Date() })
         .where('user_id', '=', userId)
         .where('revoked_at', 'is', null)
+        .execute();
+      await transaction
+        .insertInto('outbox_events')
+        .values({
+          topic: 'email.password_changed',
+          payload: { ciphertext: encryptJson(this.environment, { email: user.email }) }
+        })
         .execute();
     });
   }
@@ -446,7 +458,7 @@ export class AuthService {
     await this.database.transaction().execute(async (transaction) => {
       const user = await transaction
         .selectFrom('users')
-        .select(['password_hash'])
+        .select(['password_hash', 'email'])
         .where('id', '=', userId)
         .forUpdate()
         .executeTakeFirst();
@@ -463,6 +475,13 @@ export class AuthService {
         .set({ revoked_at: new Date() })
         .where('user_id', '=', userId)
         .where('revoked_at', 'is', null)
+        .execute();
+      await transaction
+        .insertInto('outbox_events')
+        .values({
+          topic: 'email.password_changed',
+          payload: { ciphertext: encryptJson(this.environment, { email: user.email }) }
+        })
         .execute();
     });
   }

@@ -720,11 +720,16 @@ Do **not** accept source/vendor ID, costs, price, margin, status, assignment or 
 | DELETE | `/api/v1/me/saved-searches/:id` | Delete |
 | GET | `/api/v1/me/leads` | My quote requests |
 | GET | `/api/v1/me/leads/:referenceNo` | Customer-safe request status |
+| POST | `/api/v1/me/deals/:dealReference/salesperson-rating` | Rate the salesperson after a completed deal |
 | GET | `/api/v1/me/notifications` | Own notifications |
 | PATCH | `/api/v1/me/notifications/:id/read` | Mark read |
 | POST | `/api/v1/me/notifications/read-all` | Mark all read |
 
 Guest leads must not be automatically claimed merely because a new account uses the same unverified email.
+
+Salesperson ratings are accepted only from the authenticated customer who owns a completed deal. The customer may
+submit one integer rating from 1 to 5 per deal. The deal reference, customer, and salesperson are derived from the
+completed deal; clients cannot choose or rate another salesperson.
 
 ---
 
