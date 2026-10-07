@@ -49,9 +49,14 @@ const redis: RedisConnection = {
   incrementFixedWindow: () => Promise.resolve(1)
 };
 const storage: ObjectStorage = {
-  presignPut: (key) => Promise.resolve(`http://upload.test/${key}`),
+  createUpload: (key) =>
+    Promise.resolve({
+      uploadUrl: 'http://upload.test/' + key,
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/jpeg' }
+    }),
   head: () => Promise.resolve({ mimeType: 'image/jpeg', sizeBytes: 1234 }),
-  publicUrl: (key) => `http://media.test/${key}`
+  publicUrl: (key) => 'http://media.test/' + key
 };
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 1 }) : undefined;
 const database = databaseUrl ? createPostgresPool(environment) : undefined;
