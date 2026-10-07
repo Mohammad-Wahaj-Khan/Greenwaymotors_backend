@@ -20,6 +20,7 @@
     "db:bootstrap-admin": "tsx scripts/bootstrap-admin.ts",
     "db:types": "tsx scripts/generate-db-types.ts",
     "db:types:check": "tsx scripts/generate-db-types.ts --verify",
+    "email:verify": "tsx scripts/check-smtp.ts",
     "openapi:validate": "tsx scripts/validate-openapi.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

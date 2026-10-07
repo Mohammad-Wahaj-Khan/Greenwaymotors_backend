@@ -10,7 +10,7 @@ const staleLockMs = 5 * 60 * 1000;
 
 interface MailPayload {
   email: string;
-  token: string;
+  token?: string;
 }
 
 export async function processOutboxEvent(
@@ -55,10 +55,16 @@ export async function processOutboxEvent(
     if (typeof payload.ciphertext !== 'string')
       throw new Error('Outbox encrypted payload is missing.');
     const mail = decryptJson<MailPayload>(environment, payload.ciphertext);
-    if (!mail.email || !mail.token) throw new Error('Outbox email payload is invalid.');
-    if (event.topic === 'email.verification') await email.sendVerificationEmail(mail);
-    else if (event.topic === 'email.password_reset') await email.sendPasswordResetEmail(mail);
-    else throw new Error(`Unsupported outbox topic: ${event.topic}`);
+    if (!mail.email) throw new Error('Outbox email payload is invalid.');
+    if (event.topic === 'email.verification') {
+      if (!mail.token) throw new Error('Outbox verification token is missing.');
+      await email.sendVerificationEmail({ email: mail.email, token: mail.token });
+    } else if (event.topic === 'email.password_reset') {
+      if (!mail.token) throw new Error('Outbox password reset token is missing.');
+      await email.sendPasswordResetEmail({ email: mail.email, token: mail.token });
+    } else if (event.topic === 'email.password_changed') {
+      await email.sendPasswordChangedEmail({ email: mail.email });
+    } else throw new Error(`Unsupported outbox topic: ${event.topic}`);
     await db
       .updateTable('outbox_events')
       .set({

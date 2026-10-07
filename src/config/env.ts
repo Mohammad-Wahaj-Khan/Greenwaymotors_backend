@@ -42,12 +42,34 @@ const environmentSchema = z
     S3_SECRET_ACCESS_KEY: z.string().min(1),
     MAIL_FROM: z.email(),
     MAIL_PROVIDER: z.string().min(1),
+    SMTP_FROM: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => value || undefined),
     SMTP_HOST: z.string().min(1).default('127.0.0.1'),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(1025),
+    SMTP_USER: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => value || undefined),
+    SMTP_PASSWORD: z
+      .string()
+      .optional()
+      .transform((value) => (value === '' ? undefined : value)),
+    SMTP_USE_TLS: booleanFromEnvironment.default(false),
     DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')
   })
   .superRefine((environment, context) => {
+    if (Boolean(environment.SMTP_USER) !== Boolean(environment.SMTP_PASSWORD)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['SMTP_PASSWORD'],
+        message: 'SMTP_USER and SMTP_PASSWORD must be configured together.'
+      });
+    }
     if (environment.NODE_ENV === 'production' && !environment.DATA_ENCRYPTION_KEY) {
       context.addIssue({
         code: 'custom',

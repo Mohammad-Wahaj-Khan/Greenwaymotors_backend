@@ -465,6 +465,15 @@ export interface SavedSearches {
   user_id: string;
 }
 
+export interface SalespersonRatings {
+  created_at: Generated<Timestamp>;
+  customer_id: string;
+  deal_id: string;
+  id: Generated<string>;
+  rating: number;
+  salesperson_id: string;
+}
+
 export interface SchemaMigrations {
   applied_at: Generated<Timestamp>;
   name: string;
@@ -682,6 +691,7 @@ export interface DB {
   role_permissions: RolePermissions;
   roles: Roles;
   saved_searches: SavedSearches;
+  salesperson_ratings: SalespersonRatings;
   schema_migrations: SchemaMigrations;
   upload_intents: UploadIntents;
   user_mfa: UserMfa;

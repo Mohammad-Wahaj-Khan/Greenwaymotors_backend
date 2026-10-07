@@ -4823,6 +4823,54 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
+  /api/v1/me/deals/{dealReference}/salesperson-rating:
+    post:
+      tags:
+        - Customer Account
+      operationId: postApiV1MeDealsDealReferenceSalespersonRating
+      summary: Rate the salesperson for a completed deal
+      description:
+        Customer-only endpoint. The deal must belong to the authenticated customer and be completed. Each completed
+        deal can receive one rating from 1 to 5.
+      parameters:
+        - name: dealReference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^DEAL-[0-9]+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - rating
+              properties:
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: One star is the lowest rating; five stars is the highest.
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: Rating recorded. Standard data envelope.
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          description: Deal is not found, not owned by this customer, or not completed.
+          $ref: '#/components/responses/Problem'
+        '409':
+          description: A rating was already submitted for this deal.
+          $ref: '#/components/responses/Problem'
   /api/v1/me/favorites/{vehicleId}:
     put:
       tags:

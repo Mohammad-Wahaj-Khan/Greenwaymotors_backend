@@ -4,10 +4,14 @@ import { z } from 'zod';
 import type { DB } from '../../generated/database.types.js';
 import { notFoundError } from '../../core/errors/app-error.js';
 import { parseInput, sendData } from '../../core/http/api-response.js';
-import { validationError } from '../../core/errors/http-errors.js';
+import { conflictError, forbiddenError, validationError } from '../../core/errors/http-errors.js';
 import { requirePermission } from '../../middleware/authorize.middleware.js';
 
 const idSchema = z.uuid();
+const dealReferenceSchema = z.string().regex(/^DEAL-\d+$/);
+export const salespersonRatingSchema = z
+  .object({ rating: z.number().int().min(1).max(5) })
+  .strict();
 const filtersSchema = z
   .object({
     market: z.string().trim().min(1).max(100),
@@ -181,6 +185,41 @@ export function createMeRouter(db: Kysely<DB>): Router {
       .executeTakeFirst();
     if (!row) throw notFoundError;
     sendData(res, row);
+  });
+  r.post('/deals/:dealReference/salesperson-rating', async (req, res) => {
+    if (req.auth!.user.userType !== 'customer') {
+      throw forbiddenError('Only customer accounts can rate a salesperson.');
+    }
+    const dealReference = parseInput(dealReferenceSchema, req.params.dealReference);
+    const input = parseInput(salespersonRatingSchema, req.body);
+    try {
+      const result = await sql<{ id: string; rating: number; created_at: Date }>`
+        INSERT INTO salesperson_ratings (deal_id, customer_id, salesperson_id, rating)
+        SELECT d.id, d.customer_id, d.owner_salesperson_id, ${input.rating}
+        FROM deals d
+        WHERE d.reference_no = ${dealReference}
+          AND d.customer_id = ${req.auth!.user.id}
+          AND d.status = 'completed'
+        RETURNING id, rating, created_at
+      `.execute(db);
+      const row = result.rows[0];
+      if (!row) throw notFoundError;
+      sendData(
+        res,
+        { id: row.id, dealReference, rating: row.rating, createdAt: row.created_at },
+        201
+      );
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === '23505'
+      ) {
+        throw conflictError('A salesperson rating has already been submitted for this deal.');
+      }
+      throw error;
+    }
   });
   r.get('/notifications', async (req, res) => {
     const p = parseInput(paging, req.query);
