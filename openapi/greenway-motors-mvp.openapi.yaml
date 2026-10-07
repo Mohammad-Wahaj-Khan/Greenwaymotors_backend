@@ -453,38 +453,21 @@ components:
           type: string
     CreateLeadInput:
       type: object
+      additionalProperties: false
       required:
         - vehicleReferenceNo
-        - contactName
-        - contactEmail
+        - marketSlug
         - consentGiven
       properties:
         vehicleReferenceNo:
           type: string
-        contactName:
+        marketSlug:
           type: string
-        contactEmail:
-          type: string
-          format: email
-        contactPhone:
-          type: string
-        contactWhatsapp:
-          type: string
-        preferredContact:
-          type: string
-          enum:
-            - email
-            - phone
-            - whatsapp
-        customerCountryId:
-          type: integer
         destinationCountryId:
           type: integer
-        destinationPort:
-          type: string
         message:
           type: string
-          maxLength: 5000
+          maxLength: 4000
         consentGiven:
           type: boolean
           const: true
@@ -1626,9 +1609,9 @@ paths:
       tags:
         - Leads
       summary: Create quote request lead
-      description: Server derives vehicle_id, dealer_id, snapshot, source, IP and
-        user agent. Require Idempotency-Key in production.
-      security: []
+      description: Customer-authenticated quote request. Contact details and customer identity are derived from the authenticated customer profile.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:

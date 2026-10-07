@@ -6,7 +6,12 @@ import type { DB } from '../../generated/database.types.js';
 import type { AuthService } from '../auth/auth.service.js';
 import type { RedisRateLimitStore } from '../../integrations/redis/redis.js';
 import { notFoundError } from '../../core/errors/app-error.js';
-import { conflictError, validationError } from '../../core/errors/http-errors.js';
+import {
+  authenticationError,
+  conflictError,
+  forbiddenError,
+  validationError
+} from '../../core/errors/http-errors.js';
 import { audit } from '../../core/db/audit.js';
 import { parseInput, sendData } from '../../core/http/api-response.js';
 import { rateLimit } from '../../middleware/rate-limit.middleware.js';
@@ -14,14 +19,7 @@ import { rateLimit } from '../../middleware/rate-limit.middleware.js';
 const leadInput = z.strictObject({
   vehicleReferenceNo: z.string().regex(/^GW-\d+$/),
   marketSlug: z.string().trim().min(1).max(100),
-  contactName: z.string().trim().min(1).max(150),
-  contactEmail: z.email().transform((v) => v.toLowerCase()),
-  contactPhone: z.string().trim().max(60).nullable().optional(),
-  contactWhatsapp: z.string().trim().max(60).nullable().optional(),
-  preferredContact: z.enum(['email', 'phone', 'whatsapp']).nullable().optional(),
-  customerCountryId: z.number().int().positive().nullable().optional(),
   destinationCountryId: z.number().int().positive().nullable().optional(),
-  city: z.string().trim().max(100).nullable().optional(),
   message: z.string().trim().max(4000).nullable().optional(),
   consentGiven: z.literal(true),
   marketingConsent: z.boolean().default(false),
@@ -51,17 +49,17 @@ export function createPublicLeadsRouter(
     '/leads',
     rateLimit({ keyPrefix: 'lead', limit: 5, windowMs: 15 * 60_000 }, redis),
     async (req, res) => {
+      const bearer = req.get('authorization');
+      if (!bearer?.startsWith('Bearer ')) throw authenticationError();
+      const context = await auth.authenticateAccessToken(bearer.slice(7));
+      if (context.user.userType !== 'customer')
+        throw forbiddenError('Only customer accounts can request vehicle quotes.');
       const input = parseInput(leadInput, req.body);
       const key = req.get('Idempotency-Key');
       if (!key || !/^[A-Za-z0-9._:-]{8,128}$/.test(key))
         throw validationError('A valid Idempotency-Key is required.');
-      let customerId: string | null = null;
-      const bearer = req.get('authorization');
-      if (bearer) {
-        if (!bearer.startsWith('Bearer ')) throw validationError('Invalid Authorization header.');
-        const context = await auth.authenticateAccessToken(bearer.slice(7));
-        if (context.user.userType === 'customer') customerId = context.user.id;
-      }
+      const customer = context.user;
+      const customerId = customer.id;
       const hash = createHash('sha256').update(JSON.stringify({ input, customerId })).digest('hex');
       const result = await db.transaction().execute(async (trx) => {
         await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`.execute(trx);
@@ -94,7 +92,7 @@ export function createPublicLeadsRouter(
           .selectFrom('leads')
           .select('id')
           .where('vehicle_id', '=', vehicle.id)
-          .where('contact_email', '=', input.contactEmail)
+          .where('contact_email', '=', customer.email)
           .where('created_at', '>', new Date(Date.now() - 24 * 60 * 60_000))
           .orderBy('created_at', 'desc')
           .executeTakeFirst();
@@ -114,14 +112,14 @@ export function createPublicLeadsRouter(
             market_id: vehicle.market_id,
             vehicle_snapshot: snapshot,
             customer_id: customerId,
-            contact_name: input.contactName,
-            contact_email: input.contactEmail,
-            contact_phone: input.contactPhone ?? null,
-            contact_whatsapp: input.contactWhatsapp ?? null,
-            preferred_contact: input.preferredContact ?? null,
-            customer_country_id: input.customerCountryId ?? null,
+            contact_name: customer.fullName,
+            contact_email: customer.email,
+            contact_phone: customer.phone,
+            contact_whatsapp: customer.whatsapp,
+            preferred_contact: customer.preferredContact,
+            customer_country_id: customer.countryId,
             destination_country_id: input.destinationCountryId ?? null,
-            city: input.city ?? null,
+            city: customer.city,
             message: input.message ?? null,
             consent_given: true,
             marketing_consent: input.marketingConsent,

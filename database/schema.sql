@@ -18,7 +18,7 @@ CREATE TYPE transmission_type AS ENUM ('automatic', 'manual', 'cvt', 'semi_autom
 CREATE TYPE drive_type AS ENUM ('fwd', 'rwd', 'awd', '4wd');
 CREATE TYPE steering_type AS ENUM ('lhd', 'rhd');
 CREATE TYPE media_type AS ENUM ('image', 'video');
-CREATE TYPE lead_status AS ENUM ('new', 'contacted', 'quote_sent', 'negotiating', 'won', 'lost', 'spam');
+CREATE TYPE lead_status AS ENUM ('new', 'contacted', 'quote_sent', 'negotiating', 'won', 'lost', 'spam', 'completed');
 CREATE TYPE contact_method AS ENUM ('email', 'phone', 'whatsapp');
 CREATE TYPE lead_activity_type AS ENUM ('created', 'status_changed', 'assigned', 'note', 'call', 'email', 'whatsapp');
 CREATE TYPE token_purpose AS ENUM ('email_verification', 'password_reset');

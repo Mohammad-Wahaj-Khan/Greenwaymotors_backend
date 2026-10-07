@@ -34,6 +34,18 @@ Market visibility defaults to off: an active market and an active vehicle-market
 exist before a published, available vehicle appears in public search or detail responses. Public
 vehicle requests require the `market` slug query parameter.
 
+To create the first privileged account, set `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, and a
+unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 16 characters, then explicitly set
+`BOOTSTRAP_ADMIN_CONFIRM=CREATE_SUPER_ADMIN` and run `pnpm db:bootstrap-admin`. The script refuses
+to run if a super admin already exists or the target email is already registered. In production,
+also set `ALLOW_PRODUCTION_ADMIN_BOOTSTRAP=true` only for this operation, then remove the temporary
+bootstrap variables. It does not seed a shared default password. Super admins must enroll in MFA
+when required by the production login policy.
+
+Adding another super admin requires the additional explicit
+`BOOTSTRAP_ALLOW_ADDITIONAL_SUPER_ADMIN=true` opt-in; the target email must not already belong to
+an account.
+
 Database integration tests require `DATABASE_TEST_URL` and reject a target whose database name does
 not end in `_test`. Copy `.env.test.example` for local test configuration.
 

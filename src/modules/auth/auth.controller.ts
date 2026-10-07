@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express';
-import type { Environment } from '../../config/env.js';
+import { allowedWebOrigins, type Environment } from '../../config/env.js';
 import { forbiddenError } from '../../core/errors/http-errors.js';
 import { getRequestContext } from '../../core/http/request-context.js';
 import type { AuthService } from './auth.service.js';
@@ -32,9 +32,12 @@ function requireTrustedOrigin(
 ): void {
   const origin = request.get('origin');
   const referer = request.get('referer');
+  const origins = allowedWebOrigins(environment);
   if (
-    origin === environment.WEB_ORIGIN ||
-    (origin === undefined && referer?.startsWith(`${environment.WEB_ORIGIN}/`))
+    (origin !== undefined && origins.has(origin)) ||
+    (origin === undefined &&
+      referer !== undefined &&
+      [...origins].some((webOrigin) => referer.startsWith(`${webOrigin}/`)))
   ) {
     return;
   }
@@ -104,7 +107,10 @@ export function createAuthController(
     requireTrustedOrigin(request, environment);
     const token = readRefreshCookie(request);
     if (!token) {
-      throw forbiddenError('A refresh session is required.');
+      // Anonymous visitors have no HttpOnly refresh cookie to send. This is an
+      // expected state, not an authorization failure the browser should surface.
+      response.status(204).end();
+      return;
     }
     const session = await service.refresh(token, requestMetadata(request));
     response.cookie(refreshCookieName, session.refreshToken, sessionCookieOptions(environment));
@@ -181,7 +187,16 @@ export function createAuthController(
 
   const me: RequestHandler = (request, response) => {
     response.json({
-      data: request.auth!.user,
+      // Permissions are deliberately exposed only on the authenticated profile endpoint.
+      // They let first-party clients render the staff workspace without guessing from 403s;
+      // enforcement remains entirely server-side on every protected route.
+      data: {
+        ...request.auth!.user,
+        permissions:
+          request.auth!.user.userType === 'staff'
+            ? [...request.auth!.permissions].sort()
+            : []
+      },
       meta: { requestId: getRequestContext()?.requestId }
     });
   };

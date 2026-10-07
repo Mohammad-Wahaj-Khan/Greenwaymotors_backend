@@ -35,7 +35,7 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type LeadActivityType = "assigned" | "call" | "created" | "email" | "note" | "status_changed" | "whatsapp";
 
-export type LeadStatus = "cancelled" | "contacted" | "lost" | "negotiating" | "new" | "qualified" | "quote_preparing" | "quote_sent" | "spam" | "unresponsive" | "won";
+export type LeadStatus = "cancelled" | "completed" | "contacted" | "lost" | "negotiating" | "new" | "qualified" | "quote_preparing" | "quote_sent" | "spam" | "unresponsive" | "won";
 
 export type MarketStatus = "active" | "inactive";
 
@@ -186,6 +186,20 @@ export interface FulfillmentTasks {
   status: Generated<string>;
   task_type: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface InventoryImportHistory {
+  accepted_rows: number | null;
+  completed_at: Timestamp | null;
+  created_at: Timestamp;
+  errors: Json | null;
+  file_url: string;
+  id: string;
+  inventory_source_id: string | null;
+  legacy_status: string;
+  rejected_rows: number | null;
+  total_rows: number | null;
+  uploaded_by: string | null;
 }
 
 export interface InventorySources {
@@ -646,6 +660,7 @@ export interface DB {
   favorites: Favorites;
   features: Features;
   fulfillment_tasks: FulfillmentTasks;
+  inventory_import_history: InventoryImportHistory;
   inventory_sources: InventorySources;
   lead_activities: LeadActivities;
   lead_followups: LeadFollowups;

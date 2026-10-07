@@ -21,6 +21,7 @@ const statusSchema = z.strictObject({
     'contacted',
     'qualified',
     'quote_preparing',
+    'completed',
     'lost',
     'unresponsive',
     'spam',
@@ -121,10 +122,13 @@ async function salesAssignee(db: Kysely<DB>, id: string) {
   if (!role) throw validationError('Assignee must have a sales role.');
 }
 const transitions: Partial<Record<LeadStatus, readonly LeadStatus[]>> = {
-  new: ['contacted', 'lost', 'unresponsive', 'spam', 'cancelled'],
-  contacted: ['qualified', 'lost', 'unresponsive', 'spam', 'cancelled'],
-  qualified: ['quote_preparing', 'lost', 'unresponsive', 'cancelled'],
-  quote_preparing: ['lost', 'unresponsive', 'cancelled']
+  new: ['contacted', 'completed', 'lost', 'unresponsive', 'spam', 'cancelled'],
+  contacted: ['qualified', 'completed', 'lost', 'unresponsive', 'spam', 'cancelled'],
+  qualified: ['quote_preparing', 'completed', 'lost', 'unresponsive', 'cancelled'],
+  quote_preparing: ['completed', 'lost', 'unresponsive', 'cancelled'],
+  quote_sent: ['completed'],
+  negotiating: ['completed'],
+  won: ['completed']
 };
 
 export function createStaffLeadsRouter(db: Kysely<DB>): Router {
@@ -144,7 +148,8 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
             'lost',
             'spam',
             'unresponsive',
-            'cancelled'
+            'cancelled',
+            'completed'
           ])
           .optional(),
         assignedTo: z.uuid().optional(),
@@ -284,6 +289,8 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
         .forUpdate()
         .executeTakeFirst();
       if (!lead) throw notFoundError;
+      if (lead.status === 'completed')
+        throw conflictError('Completed leads cannot be assigned to another salesperson.');
       const updated = await trx
         .updateTable('leads')
         .set({ assigned_to: input.assignedTo, assigned_at: new Date() })
@@ -341,7 +348,7 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
             ...(input.status === 'contacted' && !lead.first_contacted_at
               ? { first_contacted_at: new Date() }
               : {}),
-            ...(['lost', 'unresponsive', 'cancelled', 'spam'].includes(input.status)
+            ...(['lost', 'unresponsive', 'cancelled', 'spam', 'completed'].includes(input.status)
               ? { closed_at: new Date() }
               : {}),
             ...(input.status === 'lost' ? { lost_reason: input.reason ?? null } : {})
@@ -484,6 +491,8 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
         .forUpdate()
         .executeTakeFirst();
       if (!lead) throw notFoundError;
+      if (lead.status === 'completed')
+        throw conflictError('Completed leads cannot be reopened.');
       if (!['lost', 'unresponsive', 'spam', 'cancelled'].includes(lead.status))
         throw conflictError('Only closed leads can be reopened.');
       const row = await trx

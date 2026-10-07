@@ -83,6 +83,19 @@ async function staff(role: string) {
     token: session.accessToken
   };
 }
+async function customer() {
+  const { pool, auth } = requireDependencies();
+  const id = randomUUID();
+  const emailAddress = `customer-${id}@example.test`;
+  await pool.query(
+    `INSERT INTO users (id,user_type,email,password_hash,full_name,phone,whatsapp,preferred_contact)
+    VALUES ($1,'customer',$2,$3,'Test Buyer','+1-555-0100','+1-555-0101','whatsapp')`,
+    [id, emailAddress, await hashPassword('strong-password-123')]
+  );
+  const session = await auth.login({ email: emailAddress, password: 'strong-password-123' }, {});
+  if ('mfaChallengeRequired' in session) throw new Error('Unexpected MFA challenge in test setup.');
+  return { id, email: emailAddress, token: session.accessToken };
+}
 async function fixture() {
   const { pool } = requireDependencies();
   const stock = await pool.query<{ id: number }>(
@@ -151,7 +164,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
           .set('Authorization', `Bearer ${content.token}`)
       ).status
     ).toBe(403);
-    const publicResponse = await request(api).get('/api/v1/vehicles?market=pakistan');
+    const publicResponse = await request(api).get('/api/v1/vehicles');
     expect(publicResponse.status).toBe(200);
     expect(JSON.stringify(publicResponse.body)).not.toContain('Secret Supplier');
     expect(JSON.stringify(publicResponse.body)).not.toContain('1234500');
@@ -204,8 +217,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(2);
     expect(
       (
@@ -215,8 +227,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(1);
     expect(
       (
@@ -233,13 +244,11 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(1);
     await pool.query("UPDATE markets SET status='inactive' WHERE id=$1", [f.marketId]);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(0);
   });
 
@@ -396,7 +405,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
           .send({})
       ).status
     ).toBe(200);
-    const matchingBlogs = await request(api).get('/api/v1/content/blog?market=pakistan');
+    const matchingBlogs = await request(api).get('/api/v1/content/blog');
     const unmatchedBlogs = await request(api).get('/api/v1/content/blog?market=unassigned');
     expect(matchingBlogs.status, JSON.stringify(matchingBlogs.body)).toBe(200);
     expect(unmatchedBlogs.status, JSON.stringify(unmatchedBlogs.body)).toBe(200);
@@ -561,46 +570,74 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
     ).toHaveLength(1);
   });
 
-  it('creates guest leads idempotently and enforces sales scope, transitions and follow-up ownership', async () => {
+  it('creates customer leads idempotently and enforces sales scope, transitions and follow-up ownership', async () => {
     const { app: api, pool } = requireDependencies();
     const f = await fixture();
+    const buyer = await customer();
     const manager = await staff('sales_manager');
     const agent = await staff('sales_agent');
     const other = await staff('sales_agent');
     const payload = {
       vehicleReferenceNo: f.referenceNo,
       marketSlug: 'pakistan',
-      contactName: 'Buyer',
-      contactEmail: 'buyer@example.test',
       consentGiven: true
     };
     const key = `lead-${randomUUID()}`;
     expect(
+      (await request(api).post('/api/v1/leads').set('Idempotency-Key', key).send(payload)).status
+    ).toBe(401);
+    expect(
       (
         await request(api)
           .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${manager.token}`)
+          .set('Idempotency-Key', `lead-${randomUUID()}`)
+          .send(payload)
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await request(api)
+          .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${buyer.token}`)
           .set('Idempotency-Key', key)
           .send({ ...payload, inventorySourceId: f.sourceId })
       ).status
     ).toBe(422);
+    expect(
+      (
+        await request(api)
+          .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${buyer.token}`)
+          .set('Idempotency-Key', `lead-${randomUUID()}`)
+          .send({ ...payload, contactEmail: 'spoofed@example.test' })
+      ).status
+    ).toBe(422);
     const created = await request(api)
       .post('/api/v1/leads')
+      .set('Authorization', `Bearer ${buyer.token}`)
       .set('Idempotency-Key', key)
       .send(payload);
     expect(created.status).toBe(201);
     const ref = (created.body as { data: { referenceNo: string } }).data.referenceNo;
     expect(
       (
-        (await request(api).post('/api/v1/leads').set('Idempotency-Key', key).send(payload))
-          .body as { data: { referenceNo: string } }
+        (
+          await request(api)
+            .post('/api/v1/leads')
+            .set('Authorization', `Bearer ${buyer.token}`)
+            .set('Idempotency-Key', key)
+            .send(payload)
+        ).body as { data: { referenceNo: string } }
       ).data.referenceNo
     ).toBe(ref);
     expect(
       (
         await request(api)
           .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${buyer.token}`)
           .set('Idempotency-Key', key)
-          .send({ ...payload, contactName: 'Other' })
+          .send({ ...payload, message: 'A different quote request' })
       ).status
     ).toBe(409);
     const count = await pool.query<{ count: string }>('SELECT count(*) FROM leads');
@@ -609,6 +646,21 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       'SELECT vehicle_snapshot FROM leads WHERE reference_no=$1',
       [ref]
     );
+    const customerLead = await pool.query<{
+      contact_name: string;
+      contact_email: string;
+      contact_whatsapp: string | null;
+      customer_id: string;
+    }>(
+      'SELECT customer_id,contact_name,contact_email,contact_whatsapp FROM leads WHERE reference_no=$1',
+      [ref]
+    );
+    expect(customerLead.rows[0]).toMatchObject({
+      customer_id: buyer.id,
+      contact_name: 'Test Buyer',
+      contact_email: buyer.email,
+      contact_whatsapp: '+1-555-0101'
+    });
     expect(snapshot.rows[0]!.vehicle_snapshot).toMatchObject({
       referenceNo: f.referenceNo,
       title: 'Exact Corolla'
@@ -695,6 +747,44 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
           .set('Authorization', `Bearer ${agent.token}`)
       ).status
     ).toBe(200);
+    const completedLead = await request(api)
+      .patch(`/api/v1/staff/leads/${ref}/status`)
+      .set('Authorization', `Bearer ${agent.token}`)
+      .send({ status: 'completed' });
+    expect(completedLead.status).toBe(200);
+    expect((completedLead.body as { data: { status: string } }).data.status).toBe('completed');
+    const completedList = await request(api)
+      .get('/api/v1/staff/leads?status=completed')
+      .set('Authorization', `Bearer ${manager.token}`);
+    expect(completedList.status).toBe(200);
+    expect(
+      (completedList.body as { data: Array<{ referenceNo: string }> }).data.map(
+        (item) => item.referenceNo
+      )
+    ).toContain(ref);
+    expect(
+      (
+        await request(api)
+          .post(`/api/v1/staff/leads/${ref}/assign`)
+          .set('Authorization', `Bearer ${manager.token}`)
+          .send({ assignedTo: other.id })
+      ).status
+    ).toBe(409);
+    expect(
+      (
+        await request(api)
+          .post(`/api/v1/staff/leads/${ref}/reopen`)
+          .set('Authorization', `Bearer ${manager.token}`)
+      ).status
+    ).toBe(409);
+    expect(
+      (
+        await request(api)
+          .patch(`/api/v1/staff/leads/${ref}/status`)
+          .set('Authorization', `Bearer ${manager.token}`)
+          .send({ status: 'contacted' })
+      ).status
+    ).toBe(409);
     expect(
       (
         await request(api)
@@ -709,6 +799,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       (
         await request(api)
           .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${buyer.token}`)
           .set('X-Forwarded-For', '192.0.2.11')
           .set('Idempotency-Key', `lead-${randomUUID()}`)
           .send(payload)
@@ -724,6 +815,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       (
         await request(api)
           .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${buyer.token}`)
           .set('X-Forwarded-For', '192.0.2.12')
           .set('Idempotency-Key', `lead-${randomUUID()}`)
           .send(payload)
@@ -737,6 +829,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       (
         await request(api)
           .post('/api/v1/leads')
+          .set('Authorization', `Bearer ${buyer.token}`)
           .set('X-Forwarded-For', '192.0.2.13')
           .set('Idempotency-Key', `lead-${randomUUID()}`)
           .send(payload)
@@ -968,8 +1061,7 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]!.status
     ).toBe('accepted');
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(0);
 
     for (const status of ['source_confirmed', 'processing', 'ready_for_delivery']) {
@@ -1016,8 +1108,7 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]
     ).toMatchObject({ status: 'completed', availability_status: 'sold' });
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(0);
   });
 
@@ -1054,8 +1145,7 @@ integration('Phase 4–5 commercial workflow', () => {
       f.vehicleId
     ]);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(1);
     const replacementKey = `reserve-c-${randomUUID()}`;
     const replacement = await reserve(replacementKey);

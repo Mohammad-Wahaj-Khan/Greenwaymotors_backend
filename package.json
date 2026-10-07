@@ -17,6 +17,7 @@
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:bootstrap-admin": "tsx scripts/bootstrap-admin.ts",
     "db:types": "tsx scripts/generate-db-types.ts",
     "db:types:check": "tsx scripts/generate-db-types.ts --verify",
     "openapi:validate": "tsx scripts/validate-openapi.ts",

@@ -82,6 +82,32 @@ BEGIN
     END IF;
 END $$;
 
+-- A marketplace allowed stock numbers to repeat across different dealers.
+-- In the single-seller catalogue retain the oldest stock number and make each
+-- later collision globally unique while retaining its internal source trace.
+DO $$
+BEGIN
+    IF to_regclass('public.dealers') IS NOT NULL THEN
+        WITH numbered AS (
+            SELECT
+                id,
+                dealer_id,
+                stock_number,
+                row_number() OVER (
+                    PARTITION BY stock_number
+                    ORDER BY created_at, id
+                ) AS position
+            FROM vehicles
+            WHERE stock_number IS NOT NULL AND deleted_at IS NULL
+        )
+        UPDATE vehicles AS vehicle
+        SET stock_number = vehicle.stock_number || '-source-' || numbered.dealer_id::text
+        FROM numbered
+        WHERE vehicle.id = numbered.id
+          AND numbered.position > 1;
+    END IF;
+END $$;
+
 DROP INDEX IF EXISTS uq_vehicles_dealer_stock;
 DROP INDEX IF EXISTS uq_vehicles_dealer_vin;
 DROP INDEX IF EXISTS idx_vehicles_dealer;
@@ -95,13 +121,55 @@ ALTER TABLE vehicles DROP COLUMN IF EXISTS dealer_id;
 ALTER TABLE leads DROP COLUMN IF EXISTS dealer_id;
 DROP INDEX IF EXISTS idx_leads_dealer;
 
+-- Preserve historical dealer uploads as internal procurement history. The operational
+-- import workflow is intentionally retired, but this data remains valuable for audit.
+CREATE TABLE IF NOT EXISTS inventory_import_history (
+    id                  UUID PRIMARY KEY,
+    inventory_source_id UUID REFERENCES inventory_sources(id),
+    uploaded_by         UUID REFERENCES users(id),
+    file_url            TEXT NOT NULL,
+    legacy_status       TEXT NOT NULL,
+    total_rows          INT,
+    accepted_rows       INT,
+    rejected_rows       INT,
+    errors              JSONB,
+    created_at          TIMESTAMPTZ NOT NULL,
+    completed_at        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_import_history_source
+    ON inventory_import_history (inventory_source_id, created_at DESC);
+
 DO $$
 BEGIN
     IF to_regclass('public.vehicle_imports') IS NOT NULL THEN
-        IF EXISTS (SELECT 1 FROM vehicle_imports) THEN
-            RAISE EXCEPTION
-                'Cannot drop dealer vehicle imports with records. Export the records and re-import them through the future internal import workflow.';
-        END IF;
+        INSERT INTO inventory_import_history (
+            id,
+            inventory_source_id,
+            uploaded_by,
+            file_url,
+            legacy_status,
+            total_rows,
+            accepted_rows,
+            rejected_rows,
+            errors,
+            created_at,
+            completed_at
+        )
+        SELECT
+            id,
+            dealer_id,
+            uploaded_by,
+            file_url,
+            status::text,
+            total_rows,
+            accepted_rows,
+            rejected_rows,
+            errors,
+            created_at,
+            completed_at
+        FROM vehicle_imports
+        ON CONFLICT (id) DO NOTHING;
+
         DROP TABLE vehicle_imports;
     END IF;
 END $$;

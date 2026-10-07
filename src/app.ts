@@ -5,7 +5,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { Express } from 'express';
-import type { Environment } from './config/env.js';
+import { allowedWebOrigins, type Environment } from './config/env.js';
 import type { DatabaseConnection } from './core/db/database.js';
 import { createHealthRouter, type HealthDependencies } from './modules/health/health-routes.js';
 import { createPublicRouter } from './modules/public/public-routes.js';
@@ -59,6 +59,7 @@ export function createApp(environment: Environment, dependencies: AppDependencie
   const app = express();
   const logger = createLogger(environment);
   const authService = new AuthService(dependencies.database.db, environment);
+  const webOrigins = allowedWebOrigins(environment);
 
   app.set('trust proxy', environment.TRUST_PROXY_HOPS);
   app.disable('x-powered-by');
@@ -68,13 +69,14 @@ export function createApp(environment: Environment, dependencies: AppDependencie
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || origin === environment.WEB_ORIGIN) {
+        if (!origin || webOrigins.has(origin)) {
           callback(null, true);
           return;
         }
         callback(null, false);
       },
       credentials: true,
+      exposedHeaders: ['Retry-After'],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
     })
   );

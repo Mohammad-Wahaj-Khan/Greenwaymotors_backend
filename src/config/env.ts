@@ -5,6 +5,18 @@ import { z } from 'zod';
 loadDotenv({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 
 const booleanFromEnvironment = z.enum(['true', 'false']).transform((value) => value === 'true');
+const originsFromEnvironment = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value
+      ? value
+          .split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      : []
+  )
+  .pipe(z.array(z.url()));
 
 const environmentSchema = z
   .object({
@@ -17,6 +29,7 @@ const environmentSchema = z
     REDIS_URL: z.url(),
     REDIS_REQUIRED: booleanFromEnvironment.default(false),
     WEB_ORIGIN: z.url(),
+    WEB_ORIGINS: originsFromEnvironment,
     COOKIE_DOMAIN: z.string().min(1),
     ACCESS_TOKEN_PRIVATE_KEY: z.string().min(32),
     ACCESS_TOKEN_PUBLIC_KEY: z.string().min(32),
@@ -59,4 +72,8 @@ export function parseEnvironment(source: Record<string, string | undefined>): En
 
 export function loadEnvironment(): Environment {
   return parseEnvironment(process.env);
+}
+
+export function allowedWebOrigins(environment: Environment): ReadonlySet<string> {
+  return new Set([environment.WEB_ORIGIN, ...environment.WEB_ORIGINS]);
 }
