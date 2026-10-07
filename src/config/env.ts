@@ -116,6 +116,8 @@ export function loadEnvironment(): Environment {
   return parseEnvironment(process.env);
 }
 
+const deployedWebOrigins = ['https://greenwaymotors.vercel.app'];
+
 export function allowedWebOrigins(environment: Environment): ReadonlySet<string> {
-  return new Set([environment.WEB_ORIGIN, ...environment.WEB_ORIGINS]);
+  return new Set([environment.WEB_ORIGIN, ...environment.WEB_ORIGINS, ...deployedWebOrigins]);
 }
