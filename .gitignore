@@ -4,3 +4,4 @@ coverage/
 .env
 *.log
 .pnpm-store/
+.env.test
