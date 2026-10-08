@@ -17,6 +17,7 @@ import {
   updateProfileSchema
 } from './auth.schema.js';
 import { AuthService } from './auth.service.js';
+import { loginRateLimitOptions } from './auth.rate-limit.js';
 
 export function createAuthRouter(
   service: AuthService,
@@ -35,7 +36,7 @@ export function createAuthRouter(
   );
   router.post(
     '/auth/login',
-    rateLimit({ keyPrefix: 'login', limit: 5, windowMs: 15 * 60 * 1000 }, redis),
+    rateLimit(loginRateLimitOptions(environment), redis),
     validateBody(loginSchema),
     controller.login
   );
