@@ -455,6 +455,15 @@ export interface Roles {
   name: string;
 }
 
+export interface SalespersonRatings {
+  created_at: Generated<Timestamp>;
+  customer_id: string;
+  deal_id: string;
+  id: Generated<string>;
+  rating: number;
+  salesperson_id: string;
+}
+
 export interface SavedSearches {
   created_at: Generated<Timestamp>;
   filters: Json;
@@ -463,15 +472,6 @@ export interface SavedSearches {
   name: string | null;
   notify: Generated<boolean>;
   user_id: string;
-}
-
-export interface SalespersonRatings {
-  created_at: Generated<Timestamp>;
-  customer_id: string;
-  deal_id: string;
-  id: Generated<string>;
-  rating: number;
-  salesperson_id: string;
 }
 
 export interface SchemaMigrations {
@@ -528,6 +528,7 @@ export interface UserSessions {
   expires_at: Timestamp;
   id: Generated<string>;
   ip_address: string | null;
+  last_active_at: Generated<Timestamp>;
   refresh_token_hash: string;
   revoked_at: Timestamp | null;
   user_agent: string | null;
@@ -690,8 +691,8 @@ export interface DB {
   quotes: Quotes;
   role_permissions: RolePermissions;
   roles: Roles;
-  saved_searches: SavedSearches;
   salesperson_ratings: SalespersonRatings;
+  saved_searches: SavedSearches;
   schema_migrations: SchemaMigrations;
   upload_intents: UploadIntents;
   user_mfa: UserMfa;

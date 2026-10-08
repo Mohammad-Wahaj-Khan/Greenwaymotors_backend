@@ -49,12 +49,7 @@ const redis: RedisConnection = {
   incrementFixedWindow: () => Promise.resolve(1)
 };
 const storage: ObjectStorage = {
-  createUpload: (key) =>
-    Promise.resolve({
-      uploadUrl: 'http://upload.test/' + key,
-      method: 'PUT',
-      headers: { 'Content-Type': 'image/jpeg' }
-    }),
+  upload: () => Promise.resolve(),
   head: () => Promise.resolve({ mimeType: 'image/jpeg', sizeBytes: 1234 }),
   publicUrl: (key) => 'http://media.test/' + key
 };
@@ -539,7 +534,25 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
         .set('Authorization', `Bearer ${owner.token}`)
         .send({ purpose: 'vehicle_media', mimeType: 'image/jpeg', sizeBytes: 1234 });
       expect(presign.status).toBe(201);
-      const intent = (presign.body as { data: { uploadIntentId: string } }).data.uploadIntentId;
+      const uploadIntent = (
+        presign.body as {
+          data: { expiresAt: string; uploadIntentId: string; uploadPath: string };
+        }
+      ).data;
+      expect(uploadIntent).toMatchObject({
+        uploadPath: `admin/uploads/${uploadIntent.uploadIntentId}/content`
+      });
+      expect(JSON.stringify(uploadIntent)).not.toMatch(/api_key|signature|public_id|uploadUrl/i);
+      expect(
+        (
+          await request(api)
+            .put(`/api/v1/${uploadIntent.uploadPath}`)
+            .set('Authorization', `Bearer ${owner.token}`)
+            .set('Content-Type', 'image/jpeg')
+            .send(Buffer.alloc(1234))
+        ).status
+      ).toBe(204);
+      const intent = uploadIntent.uploadIntentId;
       expect(
         (
           await request(api)

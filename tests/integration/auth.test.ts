@@ -182,6 +182,32 @@ describe.skipIf(!testUrl)('authentication and RBAC', () => {
     expect(response.status).toBe(401);
   });
 
+  it('invalidates an access token immediately when its current session is signed out', async () => {
+    const api = requireApp();
+    const emailAddress = `logout-${suffix}@example.test`;
+    await request(api).post('/api/v1/auth/customers/register').send({
+      email: emailAddress,
+      password: 'strong-password-123',
+      fullName: 'Logout Customer'
+    });
+    const login = await request(api)
+      .post('/api/v1/auth/login')
+      .send({ email: emailAddress, password: 'strong-password-123' });
+    const loginBody = responseBody<AuthResponse>(login);
+
+    const logout = await request(api)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${loginBody.data.accessToken}`)
+      .set('Origin', environment.WEB_ORIGIN)
+      .set('Cookie', cookieHeader(login));
+    expect(logout.status).toBe(200);
+
+    const currentUser = await request(api)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${loginBody.data.accessToken}`);
+    expect(currentUser.status).toBe(401);
+  });
+
   it('enforces one-time token use and revokes refresh sessions after a password reset', async () => {
     const api = requireApp();
     const emailAddress = `reset-${suffix}@example.test`;

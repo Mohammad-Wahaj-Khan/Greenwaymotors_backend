@@ -1,19 +1,14 @@
 import { createHash } from 'node:crypto';
 import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Environment } from '../../config/env.js';
 
 export interface ObjectStorage {
-  createUpload(
+  upload(
     key: string,
     mimeType: string,
-    sizeBytes: number
-  ): Promise<{
-    uploadUrl: string;
-    method: 'PUT' | 'POST';
-    headers: Record<string, string>;
-    fields?: Record<string, string>;
-  }>;
+    sizeBytes: number,
+    content: Uint8Array
+  ): Promise<void>;
   head(
     key: string,
     expectedMimeType: string
@@ -36,18 +31,16 @@ export function createObjectStorage(environment: Environment): ObjectStorage {
   const bucket = environment.S3_BUCKET;
   const base = environment.S3_ENDPOINT.replace(/\/$/, '');
   return {
-    async createUpload(key, mimeType, sizeBytes) {
-      const uploadUrl = await getSignedUrl(
-        client,
+    async upload(key, mimeType, sizeBytes, content) {
+      await client.send(
         new PutObjectCommand({
           Bucket: bucket,
           Key: key,
+          Body: content,
           ContentType: mimeType,
           ContentLength: sizeBytes
-        }),
-        { expiresIn: 900 }
+        })
       );
-      return { uploadUrl, method: 'PUT', headers: { 'Content-Type': mimeType } };
     },
     async head(key) {
       const result = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
@@ -70,23 +63,28 @@ function createCloudinaryStorage(environment: Environment): ObjectStorage {
   const publicId = (key: string) => key.replace(/\.[^.]+$/, '');
 
   return {
-    createUpload(key, mimeType) {
+    async upload(key, mimeType, _sizeBytes, content) {
       const timestamp = Math.floor(Date.now() / 1000).toString();
       const id = publicId(key);
       const signedParameters = `overwrite=false&public_id=${id}&timestamp=${timestamp}`;
       const signature = createHash('sha1').update(`${signedParameters}${apiSecret}`).digest('hex');
-      return Promise.resolve({
-        uploadUrl: `${base}/${resourceType(mimeType)}/upload`,
-        method: 'POST',
-        headers: {},
-        fields: {
-          api_key: apiKey,
-          timestamp,
-          public_id: id,
-          overwrite: 'false',
-          signature
-        }
+      const form = new FormData();
+      form.set('api_key', apiKey);
+      form.set('timestamp', timestamp);
+      form.set('public_id', id);
+      form.set('overwrite', 'false');
+      form.set('signature', signature);
+      form.set(
+        'file',
+        new Blob([content], { type: mimeType }),
+        key.split('/').at(-1) ?? 'upload'
+      );
+
+      const response = await fetch(`${base}/${resourceType(mimeType)}/upload`, {
+        body: form,
+        method: 'POST'
       });
+      if (!response.ok) throw new Error('Cloudinary upload failed.');
     },
     async head(key, expectedMimeType) {
       const type = resourceType(expectedMimeType);

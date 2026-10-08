@@ -111,6 +111,7 @@ function encodeCursor(cursor: Cursor): string {
 
 function toPublicVehicle(row: VehicleRow, detail = false) {
   const base = {
+    id: row.id,
     referenceNo: row.reference_no,
     title: row.title,
     condition: row.condition,

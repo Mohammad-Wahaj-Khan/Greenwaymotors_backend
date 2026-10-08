@@ -36,6 +36,7 @@ const environmentSchema = z
     ACCESS_TOKEN_PUBLIC_KEY: z.string().min(32),
     ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive(),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive(),
+    SESSION_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().positive().default(30),
     S3_ENDPOINT: z.url(),
     S3_REGION: z.string().min(1),
     S3_BUCKET: z.string().min(1),

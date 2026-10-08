@@ -27,22 +27,31 @@ const environment = parseEnvironment({
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Cloudinary object storage', () => {
-  it('returns a signed multipart upload instruction without exposing the API secret', async () => {
+  it('sends the signed multipart request from the server', async () => {
     const storage = createObjectStorage(environment);
-    const instruction = await storage.createUpload(
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await storage.upload(
       'vehicle-media/staff-1/asset.jpg',
       'image/jpeg',
-      1234
+      1234,
+      new Uint8Array(1234)
     );
-    const fields = instruction.fields!;
-    const signed = `overwrite=false&public_id=vehicle-media/staff-1/asset&timestamp=${fields.timestamp}test-secret`;
 
-    expect(instruction.method).toBe('POST');
-    expect(instruction.uploadUrl).toBe('https://api.cloudinary.com/v1_1/demo-cloud/image/upload');
-    expect(instruction.headers).toEqual({});
-    expect(fields.api_key).toBe('test-key');
-    expect(fields.signature).toBe(createHash('sha1').update(signed).digest('hex'));
-    expect(JSON.stringify(instruction)).not.toContain('test-secret');
+    const [url, options] = fetchMock.mock.calls[0]!;
+    const form = options?.body as FormData;
+    const timestamp = form.get('timestamp');
+    if (typeof timestamp !== 'string') throw new Error('Expected a Cloudinary upload timestamp.');
+    const signed = `overwrite=false&public_id=vehicle-media/staff-1/asset&timestamp=${timestamp}test-secret`;
+
+    expect(url).toBe('https://api.cloudinary.com/v1_1/demo-cloud/image/upload');
+    expect(options?.method).toBe('POST');
+    expect(form.get('api_key')).toBe('test-key');
+    expect(form.get('signature')).toBe(createHash('sha1').update(signed).digest('hex'));
+    expect(form.get('file')).toBeInstanceOf(Blob);
   });
 
   it('checks uploaded Cloudinary metadata and builds its public delivery URL', async () => {

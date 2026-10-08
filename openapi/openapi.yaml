@@ -1155,10 +1155,10 @@ paths:
         - Uploads
       operationId: adminPresignUpload
       description: >-
-        Returns provider-specific direct upload instructions. With STORAGE_PROVIDER=s3, send a PUT
-        to uploadUrl using headers. With STORAGE_PROVIDER=cloudinary, send a multipart POST to
-        uploadUrl with the returned fields and file field; never expose CLOUDINARY_URL or its API
-        secret in browser code. Complete the upload through /uploads/complete before attaching it.
+        Creates a short-lived, authenticated upload intent. PUT the exact file bytes to uploadPath
+        using the file MIME type and bearer token. The API sends the file to its storage provider;
+        provider credentials, signatures, and object identifiers are never returned to the browser.
+        Complete the upload through /uploads/complete before attaching it.
       security:
         - bearerAuth: []
       requestBody:
@@ -1169,7 +1169,7 @@ paths:
               $ref: '#/components/schemas/PresignUploadInput'
       responses:
         '201':
-          description: Provider-specific direct upload instructions.
+          description: Server-mediated upload instructions with no storage-provider credentials.
           content:
             application/json:
               schema:
@@ -1177,9 +1177,54 @@ paths:
                 required: [data, meta]
                 properties:
                   data:
-                    $ref: '#/components/schemas/PresignedUpload'
+                    $ref: '#/components/schemas/UploadIntent'
                   meta:
                     $ref: '#/components/schemas/RequestMeta'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/uploads/{uploadIntentId}/content:
+    put:
+      tags:
+        - Uploads
+      operationId: adminUploadIntentContent
+      description: >-
+        Uploads the exact file authorized by an upload intent. Use the MIME type authorized when
+        creating the intent as Content-Type. This endpoint returns no provider credentials.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uploadIntentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: File accepted for storage.
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
   /api/v1/admin/uploads/complete:
@@ -1442,7 +1487,7 @@ paths:
       tags:
         - Sales - Leads
       operationId: staffTransitionLead
-      description: Setting status to `completed` is terminal; completed leads cannot be reopened or reassigned.
+      description: Completed leads cannot be reopened or reassigned. The legacy `won` input is accepted for compatibility and is normalized to `completed`.
       security:
         - bearerAuth: []
       requestBody:
@@ -6389,6 +6434,7 @@ components:
       type: object
       additionalProperties: false
       required:
+        - id
         - referenceNo
         - title
         - condition
@@ -6397,6 +6443,9 @@ components:
         - model
         - stockCountry
       properties:
+        id:
+          type: string
+          format: uuid
         referenceNo:
           type: string
         title:
@@ -7056,28 +7105,17 @@ components:
           type: integer
           minimum: 1
           maximum: 104857600
-    PresignedUpload:
+    UploadIntent:
       type: object
-      required: [uploadIntentId, uploadUrl, method, headers, expiresAt]
+      required: [uploadIntentId, uploadPath, expiresAt]
       properties:
         uploadIntentId:
           type: string
           format: uuid
-        uploadUrl:
+        uploadPath:
           type: string
-          format: uri
-        method:
-          type: string
-          enum: [PUT, POST]
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-        fields:
-          type: object
-          additionalProperties:
-            type: string
-          description: Present for Cloudinary; submit each returned field in the multipart POST.
+          description: Relative to the configured API base URL; send an authenticated PUT request here.
+          example: admin/uploads/00000000-0000-0000-0000-000000000000/content
         expiresAt:
           type: string
           format: date-time
@@ -7183,6 +7221,7 @@ components:
             - contacted
             - qualified
             - quote_preparing
+            - won
             - completed
             - lost
             - unresponsive

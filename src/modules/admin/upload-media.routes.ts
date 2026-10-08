@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Router } from 'express';
+import { raw, Router } from 'express';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { DB } from '../../generated/database.types.js';
@@ -11,6 +11,7 @@ import { parseInput, parseUuid, sendData } from '../../core/http/api-response.js
 import { requirePermission } from '../../middleware/authorize.middleware.js';
 
 const mime = z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']);
+const maxUploadBytes = 100 * 1024 * 1024;
 const presignInput = z
   .strictObject({
     purpose: z.literal('vehicle_media'),
@@ -19,7 +20,7 @@ const presignInput = z
       .number()
       .int()
       .positive()
-      .max(100 * 1024 * 1024)
+      .max(maxUploadBytes)
   })
   .refine(
     (value) => value.mimeType === 'video/mp4' || value.sizeBytes <= 20 * 1024 * 1024,
@@ -76,17 +77,44 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
       })
       .returning(['id'])
       .executeTakeFirstOrThrow();
-    const upload = await storage.createUpload(key, input.mimeType, input.sizeBytes);
     sendData(
       res,
       {
         uploadIntentId: intent.id,
-        ...upload,
+        uploadPath: `admin/uploads/${intent.id}/content`,
         expiresAt: expiresAt.toISOString()
       },
       201
     );
   });
+  router.put(
+    '/uploads/:uploadIntentId/content',
+    requirePermission('vehicle.media.manage'),
+    raw({ limit: maxUploadBytes, type: mime.options }),
+    async (req, res) => {
+      const uploadIntentId = parseUuid(req.params.uploadIntentId);
+      const intent = await db
+        .selectFrom('upload_intents')
+        .selectAll()
+        .where('id', '=', uploadIntentId)
+        .executeTakeFirst();
+      if (!intent) throw notFoundError;
+      if (intent.created_by !== req.auth!.user.id) throw forbiddenError();
+      if (intent.status !== 'pending') throw conflictError('Upload intent is no longer pending.');
+      if (intent.expires_at <= new Date()) throw conflictError('Upload intent expired.');
+
+      const contentType = req.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+      if (contentType !== intent.mime_type)
+        throw validationError('Upload content type differs from the authorized intent.');
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0)
+        throw validationError('An upload file is required.');
+      if (req.body.length !== Number(intent.size_bytes))
+        throw validationError('Upload size differs from the authorized intent.');
+
+      await storage.upload(intent.object_key, intent.mime_type, Number(intent.size_bytes), req.body);
+      res.status(204).end();
+    }
+  );
   router.post('/uploads/complete', requirePermission('vehicle.media.manage'), async (req, res) => {
     const input = parseInput(z.strictObject({ uploadIntentId: z.uuid() }), req.body);
     const intent = await db

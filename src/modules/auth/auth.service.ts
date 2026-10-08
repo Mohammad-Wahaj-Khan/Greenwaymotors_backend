@@ -57,6 +57,27 @@ export class AuthService {
 
   public async authenticateAccessToken(token: string): Promise<AuthContext> {
     const claims = await this.accessTokens.verify(token);
+    const now = new Date();
+    const idleDeadline = new Date(
+      now.getTime() - this.environment.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000
+    );
+    const session = await this.database
+      .selectFrom('user_sessions')
+      .select('id')
+      .where('id', '=', claims.sessionId)
+      .where('user_id', '=', claims.subject)
+      .where('revoked_at', 'is', null)
+      .where('expires_at', '>', now)
+      .where('last_active_at', '>', idleDeadline)
+      .executeTakeFirst();
+    if (!session) {
+      throw authenticationError('The session is invalid or has expired due to inactivity.');
+    }
+    await this.database
+      .updateTable('user_sessions')
+      .set({ last_active_at: now })
+      .where('id', '=', session.id)
+      .execute();
     return this.getAuthContext(claims.subject, claims.mfaSatisfied);
   }
 
@@ -335,7 +356,16 @@ export class AuthService {
         .where('refresh_token_hash', '=', refreshHash)
         .forUpdate()
         .executeTakeFirst();
-      if (!session || session.revoked_at || session.expires_at <= new Date()) {
+      const now = new Date();
+      const idleDeadline = new Date(
+        now.getTime() - this.environment.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000
+      );
+      if (
+        !session ||
+        session.revoked_at ||
+        session.expires_at <= now ||
+        session.last_active_at <= idleDeadline
+      ) {
         throw authenticationError('The refresh session is invalid or expired.');
       }
       const user = toUserSummary(await findUserById(transaction, session.user_id));
@@ -347,7 +377,7 @@ export class AuthService {
         .set({ revoked_at: new Date() })
         .where('id', '=', session.id)
         .execute();
-      return { user, refreshToken: await this.insertSession(transaction, user.id, metadata) };
+      return { user, session: await this.insertSession(transaction, user.id, metadata) };
     });
     const mfa = await this.database
       .selectFrom('user_mfa')
@@ -359,8 +389,12 @@ export class AuthService {
       (await this.userRoles(result.user.id)).some((role) => mfaRequiredRoles.includes(role));
     return {
       user: result.user,
-      refreshToken: result.refreshToken,
-      accessToken: await this.accessTokens.issue(result.user.id, Boolean(mfa?.enabled_at)),
+      refreshToken: result.session.refreshToken,
+      accessToken: await this.accessTokens.issue(
+        result.user.id,
+        result.session.id,
+        Boolean(mfa?.enabled_at)
+      ),
       ...(setupRequired && !mfa?.enabled_at && this.environment.NODE_ENV === 'production'
         ? { mfaSetupRequired: true }
         : {})
@@ -495,13 +529,37 @@ export class AuthService {
       ...(input.city === undefined ? {} : { city: input.city }),
       ...(input.preferredContact === undefined ? {} : { preferred_contact: input.preferredContact })
     };
-    const user = await this.database
-      .updateTable('users')
-      .set(values)
-      .where('id', '=', userId)
-      .returning(userColumns)
-      .executeTakeFirstOrThrow();
-    return toUserSummary(user);
+    return this.database.transaction().execute(async (transaction) => {
+      const user = await transaction
+        .updateTable('users')
+        .set(values)
+        .where('id', '=', userId)
+        .returning(userColumns)
+        .executeTakeFirstOrThrow();
+
+      // A lead stores the contact information used when it was created. Keep active leads in
+      // sync with a customer's profile so staff do not continue contacting an outdated number.
+      // Closed leads deliberately retain their historical contact snapshot.
+      const leadValues = {
+        ...(input.fullName === undefined ? {} : { contact_name: input.fullName }),
+        ...(input.phone === undefined ? {} : { contact_phone: input.phone }),
+        ...(input.whatsapp === undefined ? {} : { contact_whatsapp: input.whatsapp }),
+        ...(input.countryId === undefined ? {} : { customer_country_id: input.countryId }),
+        ...(input.city === undefined ? {} : { city: input.city }),
+        ...(input.preferredContact === undefined
+          ? {}
+          : { preferred_contact: input.preferredContact })
+      };
+      if (Object.keys(leadValues).length) {
+        await transaction
+          .updateTable('leads')
+          .set(leadValues)
+          .where('customer_id', '=', userId)
+          .where('status', 'not in', ['completed', 'lost', 'spam', 'unresponsive', 'cancelled'])
+          .execute();
+      }
+      return toUserSummary(user);
+    });
   }
 
   private async createSession(
@@ -511,11 +569,11 @@ export class AuthService {
     setupRequired = false,
     database: DatabaseExecutor = this.database
   ): Promise<SessionIssue> {
-    const refreshToken = await this.insertSession(database, user.id, metadata);
+    const session = await this.insertSession(database, user.id, metadata);
     return {
       user,
-      refreshToken,
-      accessToken: await this.accessTokens.issue(user.id, mfaSatisfied),
+      refreshToken: session.refreshToken,
+      accessToken: await this.accessTokens.issue(user.id, session.id, mfaSatisfied),
       ...(setupRequired && this.environment.NODE_ENV === 'production'
         ? { mfaSetupRequired: true }
         : {})
@@ -526,9 +584,9 @@ export class AuthService {
     database: DatabaseExecutor,
     userId: string,
     metadata: { ip?: string; userAgent?: string }
-  ): Promise<string> {
+  ): Promise<{ id: string; refreshToken: string }> {
     const refreshToken = createOpaqueToken();
-    await database
+    const row = await database
       .insertInto('user_sessions')
       .values({
         user_id: userId,
@@ -539,8 +597,9 @@ export class AuthService {
           Date.now() + this.environment.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
         )
       })
-      .execute();
-    return refreshToken;
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    return { id: row.id, refreshToken };
   }
 
   private async createOneTimeToken(

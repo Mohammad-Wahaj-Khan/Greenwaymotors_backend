@@ -21,6 +21,7 @@ const statusSchema = z.strictObject({
     'contacted',
     'qualified',
     'quote_preparing',
+    'won',
     'completed',
     'lost',
     'unresponsive',
@@ -128,7 +129,8 @@ const transitions: Partial<Record<LeadStatus, readonly LeadStatus[]>> = {
   quote_preparing: ['completed', 'lost', 'unresponsive', 'cancelled'],
   quote_sent: ['completed'],
   negotiating: ['completed'],
-  won: ['completed']
+  // Completed is the single terminal lead state. `won` remains accepted below
+  // only for older clients and is normalised to completed.
 };
 
 export function createStaffLeadsRouter(db: Kysely<DB>): Router {
@@ -328,6 +330,7 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
     async (req, res) => {
       const ref = parseInput(reference, req.params.referenceNo);
       const input = parseInput(statusSchema, req.body);
+      const nextStatus: LeadStatus = input.status === 'won' ? 'completed' : input.status;
       const result = await db.transaction().execute(async (trx) => {
         const lead = await trx
           .selectFrom('leads')
@@ -337,21 +340,23 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
           .executeTakeFirst();
         if (!lead) throw notFoundError;
         if (!canUpdate(req, lead)) throw notFoundError;
-        if (!transitions[lead.status]?.includes(input.status))
+        if (lead.status === nextStatus || (lead.status === 'won' && nextStatus === 'completed'))
+          return lead;
+        if (!transitions[lead.status]?.includes(nextStatus))
           throw conflictError('Invalid lead state transition.');
-        if (['lost', 'unresponsive', 'cancelled'].includes(input.status) && !input.reason)
+        if (['lost', 'unresponsive', 'cancelled'].includes(nextStatus) && !input.reason)
           throw validationError('A reason is required for closure.');
         const updated = await trx
           .updateTable('leads')
           .set({
-            status: input.status,
-            ...(input.status === 'contacted' && !lead.first_contacted_at
+            status: nextStatus,
+            ...(nextStatus === 'contacted' && !lead.first_contacted_at
               ? { first_contacted_at: new Date() }
               : {}),
-            ...(['lost', 'unresponsive', 'cancelled', 'spam', 'completed'].includes(input.status)
+            ...(['lost', 'unresponsive', 'cancelled', 'spam', 'completed'].includes(nextStatus)
               ? { closed_at: new Date() }
               : {}),
-            ...(input.status === 'lost' ? { lost_reason: input.reason ?? null } : {})
+            ...(nextStatus === 'lost' ? { lost_reason: input.reason ?? null } : {})
           })
           .where('id', '=', lead.id)
           .returningAll()
@@ -362,12 +367,12 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
             lead_id: lead.id,
             actor_id: req.auth!.user.id,
             type: 'status_changed',
-            meta: { from: lead.status, to: input.status, reason: input.reason ?? null }
+            meta: { from: lead.status, to: nextStatus, reason: input.reason ?? null }
           })
           .execute();
         await audit(trx, req.auth!.user.id, 'lead.status', 'lead', lead.id, {
           from: lead.status,
-          to: input.status
+          to: nextStatus
         });
         return updated;
       });
@@ -620,6 +625,28 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
             meta: { followupId: row.id }
           })
           .execute();
+        if (lead.customer_id) {
+          const dueAt = row.due_at.toISOString();
+          await trx
+            .insertInto('notifications')
+            .values({
+              user_id: lead.customer_id,
+              type: 'lead.followup_scheduled',
+              title: 'Follow-up scheduled for your quote request',
+              body: `Our sales team will follow up on quote request ${lead.reference_no} on ${new Date(
+                dueAt
+              ).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.${
+                row.note ? ` Note: ${row.note}` : ''
+              }`,
+              data: {
+                dueAt,
+                followupId: row.id,
+                leadReferenceNo: lead.reference_no,
+                note: row.note
+              }
+            })
+            .execute();
+        }
         await audit(trx, req.auth!.user.id, 'lead.followup.create', 'lead', lead.id, {
           followupId: row.id
         });

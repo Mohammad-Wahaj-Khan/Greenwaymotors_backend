@@ -187,7 +187,8 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
        COALESCE(l.won,0)::int AS won,COALESCE(d.deals,0)::int AS deals
      FROM markets m JOIN countries c ON c.id=m.country_id
      LEFT JOIN (
-       SELECT market_id,count(*)::int AS leads,count(*) FILTER(WHERE status='won')::int AS won
+       SELECT market_id,count(*)::int AS leads,
+         count(*) FILTER(WHERE status IN ('won','completed'))::int AS won
        FROM leads WHERE (${from}::timestamptz IS NULL OR created_at>=${from}::timestamptz)
         AND (${to}::timestamptz IS NULL OR created_at<${to}::timestamptz)
        GROUP BY market_id
@@ -205,7 +206,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
         case 'salespeople':
           result = await sql<Record<string, unknown>>`
      SELECT u.id,u.full_name,count(DISTINCT l.id)::int AS leads,
-       count(DISTINCT l.id) FILTER(WHERE l.status='won')::int AS won_leads,
+       count(DISTINCT l.id) FILTER(WHERE l.status IN ('won','completed'))::int AS won_leads,
        count(DISTINCT q.id)::int AS quotes,count(DISTINCT d.id)::int AS deals
      FROM users u LEFT JOIN leads l ON l.assigned_to=u.id
       AND (${from}::timestamptz IS NULL OR l.created_at>=${from}::timestamptz)
