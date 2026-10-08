@@ -1285,7 +1285,7 @@ paths:
       tags:
         - Sales - Leads
       operationId: createGetQuoteLead
-      description: Customer-authenticated quote request. Contact details and customer identity are derived from the authenticated customer profile.
+      description: Requires an authenticated customer with a verified email address. Contact details and customer identity are derived from the authenticated customer profile.
       security:
         - bearerAuth: []
       parameters:
@@ -1308,7 +1308,11 @@ paths:
         '401':
           $ref: '#/components/responses/Problem'
         '403':
-          $ref: '#/components/responses/Problem'
+          description: Caller is not a customer or has not verified their email address.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/Problem'
         '409':

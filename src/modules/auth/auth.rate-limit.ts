@@ -8,7 +8,7 @@ export function loginRateLimitOptions(
   return {
     keyPrefix: 'login',
     limit:
-      environment.AUTH_LOGIN_RATE_LIMIT_MAX ?? (environment.NODE_ENV === 'production' ? 5 : 100),
+      environment.AUTH_LOGIN_RATE_LIMIT_MAX ?? (environment.NODE_ENV === 'production' ? 5 : 1000),
     windowMs: loginWindowMs
   };
 }

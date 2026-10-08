@@ -94,8 +94,8 @@ async function customer() {
   const id = randomUUID();
   const emailAddress = `customer-${id}@example.test`;
   await pool.query(
-    `INSERT INTO users (id,user_type,email,password_hash,full_name,phone,whatsapp,preferred_contact)
-    VALUES ($1,'customer',$2,$3,'Test Buyer','+1-555-0100','+1-555-0101','whatsapp')`,
+    `INSERT INTO users (id,user_type,email,password_hash,full_name,phone,whatsapp,preferred_contact,email_verified_at)
+    VALUES ($1,'customer',$2,$3,'Test Buyer','+1-555-0100','+1-555-0101','whatsapp',now())`,
     [id, emailAddress, await hashPassword('strong-password-123')]
   );
   const session = await auth.login({ email: emailAddress, password: 'strong-password-123' }, {});
@@ -579,6 +579,31 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
   it('creates customer leads idempotently and enforces sales scope, transitions and follow-up ownership', async () => {
     const { app: api, pool } = requireDependencies();
     const f = await fixture();
+    const unverifiedEmail = `unverified-${randomUUID()}@example.test`;
+    const unverifiedRegistration = await request(api).post('/api/v1/auth/customers/register').send({
+      email: unverifiedEmail,
+      password: 'customer-password-123',
+      fullName: 'Unverified Buyer'
+    });
+    expect(unverifiedRegistration.status).toBe(201);
+    const unverifiedLogin = await request(api)
+      .post('/api/v1/auth/login')
+      .send({ email: unverifiedEmail, password: 'customer-password-123' });
+    expect(unverifiedLogin.status).toBe(200);
+    const unverifiedToken = (unverifiedLogin.body as { data: { accessToken: string } }).data
+      .accessToken;
+    const unverifiedLead = await request(api)
+      .post('/api/v1/leads')
+      .set('Authorization', `Bearer ${unverifiedToken}`)
+      .set('Idempotency-Key', `lead-${randomUUID()}`)
+      .send({
+        vehicleReferenceNo: f.referenceNo,
+        marketSlug: 'pakistan',
+        consentGiven: true
+      });
+    expect(unverifiedLead.status).toBe(403);
+    expect((unverifiedLead.body as { detail: string }).detail).toMatch(/verify your email/i);
+
     const buyer = await customer();
     const manager = await staff('sales_manager');
     const agent = await staff('sales_agent');

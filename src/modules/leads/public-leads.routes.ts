@@ -54,6 +54,8 @@ export function createPublicLeadsRouter(
       const context = await auth.authenticateAccessToken(bearer.slice(7));
       if (context.user.userType !== 'customer')
         throw forbiddenError('Only customer accounts can request vehicle quotes.');
+      if (!context.user.emailVerifiedAt)
+        throw forbiddenError('Verify your email address before requesting a vehicle quote.');
       const input = parseInput(leadInput, req.body);
       const key = req.get('Idempotency-Key');
       if (!key || !/^[A-Za-z0-9._:-]{8,128}$/.test(key))

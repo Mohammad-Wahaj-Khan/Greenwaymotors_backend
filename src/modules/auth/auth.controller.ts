@@ -4,19 +4,7 @@ import { forbiddenError } from '../../core/errors/http-errors.js';
 import { getRequestContext } from '../../core/http/request-context.js';
 import type { AuthService } from './auth.service.js';
 import type { LoginInput, RegisterCustomerInput, UpdateProfileInput } from './auth.schema.js';
-
-const refreshCookieName = 'greenway_refresh_token';
-
-function sessionCookieOptions(environment: Environment) {
-  return {
-    httpOnly: true,
-    secure: environment.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    path: '/api/v1/auth',
-    ...(environment.NODE_ENV === 'production' ? { domain: environment.COOKIE_DOMAIN } : {}),
-    maxAge: environment.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
-  };
-}
+import { refreshCookieName, sessionCookieOptions } from './auth.cookie.js';
 
 function requestMetadata(request: Parameters<RequestHandler>[0]): {
   ip?: string;
@@ -193,9 +181,7 @@ export function createAuthController(
       data: {
         ...request.auth!.user,
         permissions:
-          request.auth!.user.userType === 'staff'
-            ? [...request.auth!.permissions].sort()
-            : []
+          request.auth!.user.userType === 'staff' ? [...request.auth!.permissions].sort() : []
       },
       meta: { requestId: getRequestContext()?.requestId }
     });
