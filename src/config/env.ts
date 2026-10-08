@@ -21,6 +21,7 @@ const originsFromEnvironment = z
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    AUTH_LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000).optional(),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
     DATABASE_URL: z.url(),
