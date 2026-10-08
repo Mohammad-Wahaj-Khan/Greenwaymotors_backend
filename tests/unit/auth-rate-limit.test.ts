@@ -30,10 +30,10 @@ describe('login rate limit by environment', () => {
   it('allows more login attempts during local development and tests', () => {
     expect(loginRateLimitOptions(environment('development'))).toEqual({
       keyPrefix: 'login',
-      limit: 100,
+      limit: 1000,
       windowMs: 15 * 60 * 1000
     });
-    expect(loginRateLimitOptions(environment('test')).limit).toBe(100);
+    expect(loginRateLimitOptions(environment('test')).limit).toBe(1000);
   });
 
   it('keeps the production limit low unless explicitly overridden for staging', () => {
