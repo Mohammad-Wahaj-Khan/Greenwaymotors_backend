@@ -10,7 +10,7 @@ const querySchema = z
   .object({
     from: z.iso.datetime().optional(),
     to: z.iso.datetime().optional(),
-    marketId: z.uuid().optional(),
+    stockCountryId: z.coerce.number().int().positive().optional(),
     salespersonId: z.uuid().optional(),
     status: z.string().trim().max(40).optional(),
     source: z.string().trim().max(80).optional(),
@@ -31,7 +31,7 @@ function filters(req: Request) {
   return {
     from: q.from ? new Date(q.from) : null,
     to: q.to ? new Date(q.to) : null,
-    marketId: q.marketId ?? null,
+    stockCountryId: q.stockCountryId ?? null,
     salespersonId: q.salespersonId ?? null,
     status: q.status ?? null,
     source: q.source ?? null,
@@ -111,7 +111,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
     'sales',
     'inventory',
     'vehicles',
-    'markets',
+    'countries',
     'salespeople',
     'sources',
     'lost-reasons'
@@ -131,7 +131,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
       const q = filters(req);
       const from = q.from,
         to = q.to,
-        marketId = q.marketId,
+        stockCountryId = q.stockCountryId,
         salespersonId = q.salespersonId,
         status = q.status,
         source = q.source;
@@ -139,15 +139,15 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
       switch (name) {
         case 'leads':
           result = await sql<Record<string, unknown>>`
-     SELECT status::text,source,market_id,count(*)::int AS count,
+     SELECT status::text,source,stock_country_id,count(*)::int AS count,
        count(*) FILTER(WHERE assigned_to IS NOT NULL)::int AS assigned
      FROM leads WHERE (${from}::timestamptz IS NULL OR created_at>=${from}::timestamptz)
       AND (${to}::timestamptz IS NULL OR created_at<${to}::timestamptz)
-      AND (${marketId}::uuid IS NULL OR market_id=${marketId}::uuid)
+      AND (${stockCountryId}::smallint IS NULL OR stock_country_id=${stockCountryId}::smallint)
       AND (${salespersonId}::uuid IS NULL OR assigned_to=${salespersonId}::uuid)
       AND (${status}::text IS NULL OR status::text=${status}::text)
       AND (${source}::text IS NULL OR source=${source}::text)
-     GROUP BY status,source,market_id ORDER BY count DESC LIMIT 1000
+     GROUP BY status,source,stock_country_id ORDER BY count DESC LIMIT 1000
     `.execute(db);
           break;
         case 'sales':
@@ -158,7 +158,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
        COALESCE(sum(margin_minor),0)::text AS estimated_margin_minor
      FROM deals WHERE (${from}::timestamptz IS NULL OR created_at>=${from}::timestamptz)
       AND (${to}::timestamptz IS NULL OR created_at<${to}::timestamptz)
-      AND (${marketId}::uuid IS NULL OR market_id=${marketId}::uuid)
+      AND (${stockCountryId}::smallint IS NULL OR stock_country_id=${stockCountryId}::smallint)
       AND (${salespersonId}::uuid IS NULL OR owner_salesperson_id=${salespersonId}::uuid)
       AND (${status}::text IS NULL OR status::text=${status}::text)
      GROUP BY month,status,currency_code ORDER BY month DESC,status,currency_code LIMIT 1000
@@ -168,7 +168,9 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
           result = await sql<Record<string, unknown>>`
      SELECT status::text,availability_status::text,count(*)::int AS count,
        count(*) FILTER(WHERE published_at<now()-interval '30 days')::int AS older_than_30_days
-     FROM vehicles WHERE deleted_at IS NULL GROUP BY status,availability_status ORDER BY status,availability_status
+     FROM vehicles WHERE deleted_at IS NULL
+      AND (${stockCountryId}::smallint IS NULL OR stock_country_id=${stockCountryId}::smallint)
+     GROUP BY status,availability_status ORDER BY status,availability_status
     `.execute(db);
           break;
         case 'vehicles':
@@ -177,29 +179,29 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
      FROM leads l JOIN vehicles v ON v.id=l.vehicle_id JOIN makes mk ON mk.id=v.make_id JOIN models mo ON mo.id=v.model_id
      WHERE (${from}::timestamptz IS NULL OR l.created_at>=${from}::timestamptz)
       AND (${to}::timestamptz IS NULL OR l.created_at<${to}::timestamptz)
-      AND (${marketId}::uuid IS NULL OR l.market_id=${marketId}::uuid)
+      AND (${stockCountryId}::smallint IS NULL OR l.stock_country_id=${stockCountryId}::smallint)
      GROUP BY mk.id,mk.name,mo.id,mo.name ORDER BY leads DESC LIMIT 100
     `.execute(db);
           break;
-        case 'markets':
+        case 'countries':
           result = await sql<Record<string, unknown>>`
-     SELECT m.id,m.slug,c.name AS country_name,COALESCE(l.leads,0)::int AS leads,
+     SELECT c.id,c.iso2,c.name AS country_name,COALESCE(l.leads,0)::int AS leads,
        COALESCE(l.won,0)::int AS won,COALESCE(d.deals,0)::int AS deals
-     FROM markets m JOIN countries c ON c.id=m.country_id
+     FROM countries c
      LEFT JOIN (
-       SELECT market_id,count(*)::int AS leads,
+       SELECT stock_country_id,count(*)::int AS leads,
          count(*) FILTER(WHERE status IN ('won','completed'))::int AS won
        FROM leads WHERE (${from}::timestamptz IS NULL OR created_at>=${from}::timestamptz)
         AND (${to}::timestamptz IS NULL OR created_at<${to}::timestamptz)
-       GROUP BY market_id
-     ) l ON l.market_id=m.id
+       GROUP BY stock_country_id
+     ) l ON l.stock_country_id=c.id
      LEFT JOIN (
-       SELECT market_id,count(*)::int AS deals FROM deals WHERE status='completed'
+       SELECT stock_country_id,count(*)::int AS deals FROM deals WHERE status='completed'
        AND (${from}::timestamptz IS NULL OR created_at>=${from}::timestamptz)
        AND (${to}::timestamptz IS NULL OR created_at<${to}::timestamptz)
-       GROUP BY market_id
-     ) d ON d.market_id=m.id
-     WHERE (${marketId}::uuid IS NULL OR m.id=${marketId}::uuid)
+       GROUP BY stock_country_id
+     ) d ON d.stock_country_id=c.id
+     WHERE c.is_active AND (${stockCountryId}::smallint IS NULL OR c.id=${stockCountryId}::smallint)
      ORDER BY leads DESC LIMIT 100
     `.execute(db);
           break;
@@ -211,6 +213,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
      FROM users u LEFT JOIN leads l ON l.assigned_to=u.id
       AND (${from}::timestamptz IS NULL OR l.created_at>=${from}::timestamptz)
       AND (${to}::timestamptz IS NULL OR l.created_at<${to}::timestamptz)
+      AND (${stockCountryId}::smallint IS NULL OR l.stock_country_id=${stockCountryId}::smallint)
      LEFT JOIN quotes q ON q.lead_id=l.id LEFT JOIN deals d ON d.lead_id=l.id
      WHERE u.user_type='staff' AND (${salespersonId}::uuid IS NULL OR u.id=${salespersonId}::uuid)
      GROUP BY u.id,u.full_name ORDER BY leads DESC LIMIT 100
@@ -221,6 +224,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
      SELECT s.id,s.company_name,s.reliability_rating,count(v.id)::int AS vehicles,
        count(v.id) FILTER(WHERE v.availability_status='sold')::int AS sold
      FROM inventory_sources s LEFT JOIN vehicles v ON v.inventory_source_id=s.id AND v.deleted_at IS NULL
+      AND (${stockCountryId}::smallint IS NULL OR v.stock_country_id=${stockCountryId}::smallint)
      GROUP BY s.id,s.company_name,s.reliability_rating ORDER BY vehicles DESC LIMIT 100
     `.execute(db);
           break;
@@ -229,7 +233,7 @@ export function createDashboardRouter(db: Kysely<DB>): Router {
      SELECT lost_reason,count(*)::int AS count FROM leads
      WHERE status='lost' AND (${from}::timestamptz IS NULL OR created_at>=${from}::timestamptz)
       AND (${to}::timestamptz IS NULL OR created_at<${to}::timestamptz)
-      AND (${marketId}::uuid IS NULL OR market_id=${marketId}::uuid)
+      AND (${stockCountryId}::smallint IS NULL OR stock_country_id=${stockCountryId}::smallint)
       AND (${salespersonId}::uuid IS NULL OR assigned_to=${salespersonId}::uuid)
      GROUP BY lost_reason ORDER BY count DESC LIMIT 100
     `.execute(db);

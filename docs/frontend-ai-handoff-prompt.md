@@ -37,25 +37,25 @@ Guests browse and submit Get-a-Quote. Registration is optional for customers; st
 
 Adapt paths/layout to existing app; wire existing pages instead of duplicating them.
 
-**Public storefront:** country/market selector, market metadata, advisory `/market-context` (visitor chooses; never force by IP), explicit choice persistence, inventory search/featured/new arrivals/detail/similar. Public inventory requires market slug. Support only documented filters (text, make/model, body type, condition, year/mileage/engine, fuel/transmission/drive/steering, seats/doors, colors, stock country, features, sort). URL-sync, reset dependent filters, cursor paginate. Detail displays public DTO, public media/specs, market price/currency if returned, availability; quote CTA and optional favorites. Guest quote form sends only schema-approved contact, vehicle reference, market/country/city, contact preference, message and consent; show validation and success/reference. Never send source/vendor, cost/margin, snapshots/trusted IDs, quote price, assignment or status. Backend verifies market eligibility. Render published pages/FAQ/blog/banners/SEO only; never expose drafts.
+**Public storefront:** stock-country selector populated by `GET /api/v1/inventory/countries`, inventory search/featured/new arrivals/detail/similar. Omit `stockCountryId` to show inventory from all countries; pass one or more stock-country IDs to filter. Country selection represents where a vehicle is stocked, not a sales market. Support only documented filters (text, make/model, body type, condition, year/mileage/engine, fuel/transmission/drive/steering, seats/doors, colors, stock country, features, sort). URL-sync, reset dependent filters, cursor paginate. Detail displays public DTO, public media/specs, vehicle price in USD if returned, availability; quote CTA and optional favorites. Guest quote form sends only schema-approved contact, vehicle reference, destination country/city, contact preference, message and consent; show validation and success/reference. Never send source/vendor, cost/margin, snapshots/trusted IDs, quote price, assignment or status. Backend derives stock country from the selected vehicle. Render published pages/FAQ/blog/banners/SEO only; never expose drafts.
 
 **Customer account:** registration, login, verification, forgot/reset/change password, profile, favorites, saved searches (CRUD/rerun), customer-safe request history/detail, own notifications (list/read/read-all). Backend does not claim guest leads based on matching unverified email. No staff notes, assignments, costs/margins, activities or internal quote data.
 
 **Staff CRM:** dashboards use five server aggregate endpoints; lead inbox/detail with supported filters, cursor pagination, enforced own/team/unassigned scope, qualification, assignment, controlled status, lost reason, authorized reopen, related leads, timeline/notes/follow-ups. Assignment alone does not change status. Follow-ups list/create/edit/reschedule/reassign/complete/reopen/cancel as permitted. Quotes list/detail, draft creation/edit, immutable new versions/history, safe preview, send/accept/reject/cancel/expire/PDF; sent version cannot be edited in place, totals/margin are server-calculated, costs only for authorized roles. Holds/reservations tied to exact vehicle; create/release/manager-extend, explain conflicts. Convert eligible won/accepted lead into deal; controlled deal states/cancel reason/fulfillment tasks/completion. Lead won is not final sale. Never mark sold locally; call deal completion and refresh. Staff notifications only list/read; do not imply push/exhaustive coverage.
 
-**Staff inventory/operations:** inventory search/detail/create/edit/soft-delete/restore; submit review/reject reason, publish/unpublish/archive, available/unavailable/sold, feature/media/history, explicit market eligibility. Follow server state transitions, confirm consequential actions, never infer eligibility from stock/source country. Market mapping inspect/replace/add/remove/bulk only when authorized. Costing is separate permission-gated API; never in public/generic request, shared public cache, logs/analytics/exports. Sources are internal vendor records; **no dealer/vendor portal**â€”do not create /dealer, /dealers, dealer member/document flows. Catalog makes/models/body types/features. Media: presign, PUT to returned storage URL, complete if required, attach/manage/reorder; follow file rules. Imports: current audit says bounded validated CSV/JSON, draft-only, errors/retry; XLSX deferred. Verify active code and expose only working formats.
+**Staff inventory/operations:** inventory search/detail/create/edit/soft-delete/restore; submit review/reject reason, publish/unpublish/archive, available/unavailable/sold, feature/media/history, stock-country assignment and one customer-visible USD price plus a salesperson-only minimum sale price. Follow server state transitions and confirm consequential actions. Inventory country filters group vehicles by their stock location. Costing is separate permission-gated API; never in public/generic request, shared public cache, logs/analytics/exports. Sources are internal vendor records; **no dealer/vendor portal**â€”do not create /dealer, /dealers, dealer member/document flows. Catalog makes/models/body types/features. Media: presign, PUT to returned storage URL, complete if required, attach/manage/reorder; follow file rules. Imports: current audit says bounded validated CSV/JSON, draft-only, errors/retry; XLSX deferred. Verify active code and expose only working formats.
 
-**Admin/CMS/reports:** staff/user list, create/invite, read/update/suspend/activate, role assignment; RBAC only when authorized. Market create/update/localization/currency/contact/SEO/activate/deactivate. CMS pages/blog/FAQ/banners only supported methods and actions. Reports leads/sales/inventory/vehicles/markets/salespeople/sources/lost reasons use server aggregates and scope. Audit list/detail read-only with redactions preserved.
+**Admin/CMS/reports:** staff/user list, create/invite, read/update/suspend/activate, role assignment; RBAC only when authorized. CMS pages/blog/FAQ/banners only supported methods and actions. Reports leads/sales/inventory/vehicles/countries/salespeople/sources/lost reasons use server aggregates and scope. Audit list/detail read-only with redactions preserved.
 
 ### Security, money, accessibility
 
-Separate public/customer and staff/internal DTOs/cache keys; clear user caches on logout/account switch. Never expose source/vendor, purchase/internal cost, margin, sourcing/review notes, unpublished market mappings, staff activities, another customer's PII, private quote/audit data. Client permissions are UX only. Never log credentials/MFA/recovery codes/sensitive body.
+Separate public/customer and staff/internal DTOs/cache keys; clear user caches on logout/account switch. Never expose source/vendor, purchase/internal cost, margin, sourcing/review notes, private stock and commercial data, staff activities, another customer's PII, private quote/audit data. Client permissions are UX only. Never log credentials/MFA/recovery codes/sensitive body.
 
-Money can be minor-unit integer or exact decimal string: no JS float calculations. Use decimal-safe utility; format with market currency/locale. Preserve existing theme desktop/tablet/mobile. Accessible labels, keyboard, focus, dialogs, non-color-only status; meaningful loading/empty/success/validation/denied/not-found/conflict/offline/retry states. Confirm consequential actions without slowing ordinary browsing.
+Money can be minor-unit integer or exact decimal string: no JS float calculations. Use decimal-safe utility; format using USD. Preserve existing theme desktop/tablet/mobile. Accessible labels, keyboard, focus, dialogs, non-color-only status; meaningful loading/empty/success/validation/denied/not-found/conflict/offline/retry states. Confirm consequential actions without slowing ordinary browsing.
 
 ### Completion
 
-Inspect/summarize frontend stack/theme, then implement in current conventions. Configure typed client/models and document frontend env variables. Connect real APIs, not mocks; gate staff actions. Verify actions against this inventory, OpenAPI and code; never call nonexistent routes. Add focused tests for API/session/errors, required market, safe projection, permissions, and critical submits/conflicts. Run lint, typecheck, tests, production build and fix regressions. Report screens/routes, tests, backend limits and env variables.
+Inspect/summarize frontend stack/theme, then implement in current conventions. Configure typed client/models and document frontend env variables. Connect real APIs, not mocks; gate staff actions. Verify actions against this inventory, OpenAPI and code; never call nonexistent routes. Add focused tests for API/session/errors, stock-country filtering, safe projection, permissions, and critical submits/conflicts. Run lint, typecheck, tests, production build and fix regressions. Report screens/routes, tests, backend limits and env variables.
 
 Current backend limits: XLSX deferred; notifications partial/no push; no IP geolocation; retained outbox/idempotency rows need no UI; no dealer/vendor portal.
 
@@ -67,8 +67,7 @@ Generated from current OpenAPI. Coverage checklist, not public nav.
 - GET /health/live
 - GET /health/ready
 - GET /api/v1/countries
-- GET /api/v1/markets
-- GET /api/v1/markets/{marketSlug}
+- GET /api/v1/inventory/countries
 - GET /api/v1/catalog/makes
 - GET /api/v1/catalog/models
 - GET /api/v1/catalog/makes/{makeId}/models
@@ -104,12 +103,6 @@ Generated from current OpenAPI. Coverage checklist, not public nav.
 - POST /api/v1/admin/inventory-sources/{id}/deactivate
 - POST /api/v1/admin/inventory-sources/{id}/block
 - GET /api/v1/admin/inventory-sources/{id}/vehicles
-- GET /api/v1/admin/markets
-- POST /api/v1/admin/markets
-- GET /api/v1/admin/markets/{id}
-- PATCH /api/v1/admin/markets/{id}
-- POST /api/v1/admin/markets/{id}/activate
-- POST /api/v1/admin/markets/{id}/deactivate
 - GET /api/v1/admin/vehicles
 - POST /api/v1/admin/vehicles
 - GET /api/v1/admin/vehicles/{id}
@@ -124,8 +117,8 @@ Generated from current OpenAPI. Coverage checklist, not public nav.
 - POST /api/v1/admin/vehicles/{id}/mark-sold
 - GET /api/v1/admin/vehicles/{id}/features
 - PUT /api/v1/admin/vehicles/{id}/features
-- GET /api/v1/admin/vehicles/{id}/markets
-- PUT /api/v1/admin/vehicles/{id}/markets
+- GET /api/v1/admin/vehicles/{id}/pricing
+- PUT /api/v1/admin/vehicles/{id}/pricing
 - GET /api/v1/admin/vehicles/{id}/costing
 - PUT /api/v1/admin/vehicles/{id}/costing
 - POST /api/v1/admin/uploads/presign
@@ -203,7 +196,7 @@ Generated from current OpenAPI. Coverage checklist, not public nav.
 - GET /api/v1/admin/reports/sales
 - GET /api/v1/admin/reports/inventory
 - GET /api/v1/admin/reports/vehicles
-- GET /api/v1/admin/reports/markets
+- GET /api/v1/admin/reports/countries
 - GET /api/v1/admin/reports/salespeople
 - GET /api/v1/admin/reports/sources
 - GET /api/v1/admin/reports/lost-reasons
@@ -273,8 +266,4 @@ Generated from current OpenAPI. Coverage checklist, not public nav.
 - POST /api/v1/admin/vehicles/{id}/submit-review
 - POST /api/v1/admin/vehicles/{id}/reject
 - GET /api/v1/admin/vehicles/{id}/history
-- PUT /api/v1/admin/vehicles/{id}/markets/{marketId}
-- DELETE /api/v1/admin/vehicles/{id}/markets/{marketId}
-- POST /api/v1/admin/vehicles/bulk-market-assignment
-- GET /api/v1/market-context
 - PATCH /api/v1/admin/catalog/makes/{id}

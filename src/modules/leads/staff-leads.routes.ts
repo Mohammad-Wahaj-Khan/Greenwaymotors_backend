@@ -74,7 +74,7 @@ function leadDto(row: Selectable<Leads>) {
     customerId: row.customer_id,
     customerCountryId: row.customer_country_id,
     destinationCountryId: row.destination_country_id,
-    marketId: row.market_id,
+    stockCountryId: row.stock_country_id,
     city: row.city,
     destinationPort: row.destination_port,
     message: row.message,
@@ -159,7 +159,7 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
           .enum(['true', 'false'])
           .transform((v) => v === 'true')
           .optional(),
-        marketId: z.uuid().optional(),
+        stockCountryId: z.coerce.number().int().positive().optional(),
         vehicleReference: z
           .string()
           .regex(/^GW-\d+$/)
@@ -180,7 +180,7 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
     if (input.status) query = query.where('status', '=', input.status);
     if (input.assignedTo) query = query.where('assigned_to', '=', input.assignedTo);
     if (input.unassigned) query = query.where('assigned_to', 'is', null);
-    if (input.marketId) query = query.where('market_id', '=', input.marketId);
+    if (input.stockCountryId) query = query.where('stock_country_id', '=', input.stockCountryId);
     if (input.destinationCountryId)
       query = query.where('destination_country_id', '=', input.destinationCountryId);
     if (input.customerCountryId)
@@ -229,7 +229,7 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
     async (req, res) => {
       const lead = await loadLead(db, parseInput(reference, req.params.referenceNo));
       if (!canRead(req, lead)) throw notFoundError;
-      const [activities, followups, market, vehicle] = await Promise.all([
+      const [activities, followups, stockCountry, vehicle] = await Promise.all([
         db
           .selectFrom('lead_activities')
           .select(['id', 'type', 'body', 'meta', 'actor_id', 'created_at'])
@@ -244,11 +244,11 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
           .where('completed_at', 'is', null)
           .orderBy('due_at')
           .execute(),
-        lead.market_id
+        lead.stock_country_id
           ? db
-              .selectFrom('markets')
-              .select(['slug', 'country_id'])
-              .where('id', '=', lead.market_id)
+              .selectFrom('countries')
+              .select(['id', 'iso2', 'name'])
+              .where('id', '=', lead.stock_country_id)
               .executeTakeFirst()
           : null,
         db
@@ -259,7 +259,7 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
       ]);
       sendData(res, {
         ...leadDto(lead),
-        market: market ?? null,
+        stockCountry: stockCountry ?? null,
         currentVehicle: vehicle ?? null,
         activities: activities.map((a) => ({
           id: a.id,

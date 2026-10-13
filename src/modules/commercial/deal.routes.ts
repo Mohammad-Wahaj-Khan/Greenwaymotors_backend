@@ -466,7 +466,6 @@ export function createDealRouter(db: Kysely<DB>): Router {
       sourceConfirmedAt: deal.source_confirmed_at,
       internalNotes: includeCost(req) ? deal.internal_notes : undefined,
       customerSnapshot: deal.customer_snapshot,
-      marketSnapshot: deal.market_snapshot,
       salespersonSnapshot: deal.salesperson_snapshot,
       vehicleSnapshot: deal.vehicle_snapshot,
       sourceSnapshot: req.auth!.permissions.has('inventory_source.read')

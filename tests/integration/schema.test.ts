@@ -294,14 +294,9 @@ integration('initial SQL schema', () => {
        VALUES ('staff', $1, 'hash', 'Salesperson') RETURNING id`,
       [`deal-staff-${randomUUID()}@example.test`]
     );
-    const country = await database.query<{ id: number }>(
-      `INSERT INTO countries (iso2, iso3, name) VALUES ('PK', 'PAK', $1) RETURNING id`,
-      [`Deal country ${randomUUID()}`]
-    );
-    const market = await database.query<{ id: string }>(
-      `INSERT INTO markets (country_id, slug, currency_code, locale)
-       VALUES ($1, $2, 'USD', 'en-PK') RETURNING id`,
-      [country.rows[0]!.id, `deal-${randomUUID()}`]
+    const country = await database.query<{ stock_country_id: number }>(
+      'SELECT stock_country_id FROM vehicles WHERE id=$1',
+      [first.vehicleId]
     );
     const lead = await database.query<{ id: string }>(
       `INSERT INTO leads (vehicle_id, vehicle_snapshot, contact_name, contact_email)
@@ -322,8 +317,8 @@ integration('initial SQL schema', () => {
         [second.rows[0]!.id, lead.rows[0]!.id, staff.rows[0]!.id]
       )
     ).rejects.toMatchObject({ code: '23503' });
-    const dealValues = [lead.rows[0]!.id, first.vehicleId, market.rows[0]!.id, staff.rows[0]!.id];
-    const dealSql = `INSERT INTO deals (lead_id, vehicle_id, market_id, owner_salesperson_id, agreed_amount_minor, currency_code)
+    const dealValues = [lead.rows[0]!.id, first.vehicleId, country.rows[0]!.stock_country_id, staff.rows[0]!.id];
+    const dealSql = `INSERT INTO deals (lead_id, vehicle_id, stock_country_id, owner_salesperson_id, agreed_amount_minor, currency_code)
       VALUES ($1, $2, $3, $4, 100000, 'USD')`;
     await database.query(dealSql, dealValues);
     await expect(database.query(dealSql, dealValues)).rejects.toMatchObject({ code: '23505' });
@@ -336,7 +331,7 @@ integration('initial SQL schema', () => {
       database.query(dealSql, [
         competingLead.rows[0]!.id,
         first.vehicleId,
-        market.rows[0]!.id,
+        country.rows[0]!.stock_country_id,
         staff.rows[0]!.id
       ])
     ).rejects.toMatchObject({ code: '23505' });

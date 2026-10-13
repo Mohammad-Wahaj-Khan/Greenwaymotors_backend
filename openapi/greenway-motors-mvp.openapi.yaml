@@ -456,12 +456,9 @@ components:
       additionalProperties: false
       required:
         - vehicleReferenceNo
-        - marketSlug
         - consentGiven
       properties:
         vehicleReferenceNo:
-          type: string
-        marketSlug:
           type: string
         destinationCountryId:
           type: integer

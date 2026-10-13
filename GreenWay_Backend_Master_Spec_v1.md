@@ -5,6 +5,9 @@
 **Architecture:** Modular monolith, REST API `/api/v1`, PostgreSQL, Express 5 + TypeScript, Kysely  
 **Purpose:** Backend handover and implementation contract for the complete GreenWay Motors global car-sales lead, quotation, sourcing and deal platform.
 
+
+> **Architecture amendment ? 2026-10-13:** This amendment supersedes earlier market-specific inventory, pricing, lead, quote, deal, CMS-targeting, and reporting requirements below. Markets are removed from active application flows. Each vehicle has one `stock_country_id`; public inventory defaults to all countries and may be filtered by `stockCountryId` / `stockCountryIds`. `GET /api/v1/inventory/countries` returns countries with current public inventory. Vehicle asking price and available discount are global USD amounts; the salesperson-only minimum sale price is also USD and remains private from public/customer projections. Leads and deals retain stock-country context, quotes use USD, and country reporting replaces market reporting. Historical market configuration, eligibility, prices, CMS targets, and lead/deal context are copied to `legacy_*` tables by migration 015; ambiguous or non-USD vehicle prices require an administrator to enter a single USD price after reviewing `vehicle_price_migration_review`. No USD conversion is guessed.
+
 ---
 
 ## 1. Authoritative Product Model

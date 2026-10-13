@@ -24,7 +24,6 @@ function multiEnum(values: readonly string[]) {
 }
 const listVehiclesQuerySchema = z
   .object({
-    market: z.string().trim().min(1).max(100),
     q: z.string().trim().min(1).max(100).optional(),
     makeId: optionalIntegerQuery,
     modelId: optionalIntegerQuery,
@@ -59,6 +58,20 @@ const listVehiclesQuerySchema = z
     exteriorColor: z.string().trim().min(1).max(100).optional(),
     interiorColor: z.string().trim().min(1).max(100).optional(),
     stockCountryId: optionalIntegerQuery,
+    stockCountryIds: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .transform((value, context) => {
+        if (value === undefined) return undefined;
+        const ids = (Array.isArray(value) ? value : value.split(','))
+          .flatMap((item) => item.split(','))
+          .map(Number);
+        if (ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+          context.addIssue({ code: 'custom', message: 'stockCountryIds must contain positive country IDs.' });
+          return z.NEVER;
+        }
+        return [...new Set(ids)];
+      }),
     featureIds: z
       .union([z.string(), z.array(z.string())])
       .optional()
@@ -121,6 +134,12 @@ const listVehiclesQuerySchema = z
 function queryObject(query: unknown): Record<string, string | string[] | undefined> {
   return query as Record<string, string | string[] | undefined>;
 }
+function countryFilter(input: {
+  stockCountryId?: number | undefined;
+  stockCountryIds?: number[] | undefined;
+}) {
+  return input.stockCountryIds ?? (input.stockCountryId ? [input.stockCountryId] : undefined);
+}
 
 export function createPublicRouter(database: DatabaseConnection): Router {
   const router = Router();
@@ -137,50 +156,9 @@ export function createPublicRouter(database: DatabaseConnection): Router {
       meta: { requestId: getRequestContext()?.requestId }
     });
   });
-  router.get('/markets', async (_request, response) => {
+  router.get('/inventory/countries', async (_request, response) => {
     response.json({
-      data: await service.listMarkets(),
-      meta: { requestId: getRequestContext()?.requestId }
-    });
-  });
-  router.get('/markets/:marketSlug', async (request, response) => {
-    const slug = z.string().trim().min(1).max(100).safeParse(request.params.marketSlug);
-    if (!slug.success) throw validationError('marketSlug is invalid.');
-    response.json({
-      data: await service.getMarket(slug.data),
-      meta: { requestId: getRequestContext()?.requestId }
-    });
-  });
-  router.get('/market-context', async (request, response) => {
-    const parsed = z
-      .object({ market: z.string().trim().min(1).max(100).optional() })
-      .safeParse(queryObject(request.query));
-    if (!parsed.success) throw validationError('market must be a valid market slug.');
-    let query = database.db
-      .selectFrom('markets')
-      .innerJoin('countries', 'countries.id', 'markets.country_id')
-      .select([
-        'markets.id',
-        'markets.slug',
-        'markets.currency_code',
-        'markets.locale',
-        'markets.sales_email',
-        'markets.sales_phone',
-        'markets.sales_whatsapp',
-        'countries.iso2',
-        'countries.iso3',
-        'countries.name as country_name'
-      ])
-      .where('markets.status', '=', 'active')
-      .where('countries.is_active', '=', true);
-    if (parsed.data.market) query = query.where('markets.slug', '=', parsed.data.market);
-    const market = await query.orderBy('markets.slug').executeTakeFirst();
-    response.json({
-      data: {
-        market: market ?? null,
-        selection: parsed.data.market ? 'client' : 'default',
-        geolocation: 'not_configured'
-      },
+      data: await service.listInventoryCountries(),
       meta: { requestId: getRequestContext()?.requestId }
     });
   });
@@ -224,7 +202,10 @@ export function createPublicRouter(database: DatabaseConnection): Router {
     const parsed = listVehiclesQuerySchema.safeParse(queryObject(request.query));
     if (!parsed.success)
       throw validationError(parsed.error.issues.map((issue) => issue.message).join('; '));
-    const result = await service.listPublishedVehicles(parsed.data);
+    const result = await service.listPublishedVehicles({
+      ...parsed.data,
+      stockCountryIds: countryFilter(parsed.data)
+    });
     response.status(200).json({
       data: result.data,
       meta: { ...result.meta, requestId: getRequestContext()?.requestId }
@@ -233,13 +214,14 @@ export function createPublicRouter(database: DatabaseConnection): Router {
   router.get('/vehicles/featured', async (request, response) => {
     const parsed = z
       .object({
-        market: z.string().trim().min(1).max(100),
+        stockCountryId: optionalIntegerQuery,
+        stockCountryIds: listVehiclesQuerySchema.shape.stockCountryIds,
         limit: z.coerce.number().int().min(1).max(50).default(12)
       })
       .safeParse(queryObject(request.query));
-    if (!parsed.success) throw validationError('market and a valid limit are required.');
+    if (!parsed.success) throw validationError('Country filters and a valid limit are required.');
     const result = await service.listPublishedVehicles({
-      market: parsed.data.market,
+      stockCountryIds: countryFilter(parsed.data),
       limit: parsed.data.limit,
       sort: 'newest',
       featureIds: [],
@@ -253,13 +235,14 @@ export function createPublicRouter(database: DatabaseConnection): Router {
   router.get('/vehicles/new-arrivals', async (request, response) => {
     const parsed = z
       .object({
-        market: z.string().trim().min(1).max(100),
+        stockCountryId: optionalIntegerQuery,
+        stockCountryIds: listVehiclesQuerySchema.shape.stockCountryIds,
         limit: z.coerce.number().int().min(1).max(50).default(12)
       })
       .safeParse(queryObject(request.query));
-    if (!parsed.success) throw validationError('market and a valid limit are required.');
+    if (!parsed.success) throw validationError('Country filters and a valid limit are required.');
     const result = await service.listPublishedVehicles({
-      market: parsed.data.market,
+      stockCountryIds: countryFilter(parsed.data),
       limit: parsed.data.limit,
       sort: 'newest',
       featureIds: []
@@ -270,17 +253,15 @@ export function createPublicRouter(database: DatabaseConnection): Router {
     });
   });
   router.get('/vehicles/:referenceNo/similar', async (request, response) => {
-    const market = z.string().trim().min(1).max(100).safeParse(request.query.market);
-    if (!market.success) throw validationError('market is required.');
     const referenceNo = z
       .string()
       .trim()
       .regex(/^GW-\d+$/)
       .safeParse(request.params.referenceNo);
     if (!referenceNo.success) throw validationError('referenceNo is invalid.');
-    const vehicle = await service.getPublishedVehicle(referenceNo.data, market.data);
+    const vehicle = await service.getPublishedVehicle(referenceNo.data);
     const result = await service.listPublishedVehicles({
-      market: market.data,
+      stockCountryIds: [vehicle.stockCountry.id],
       makeId: vehicle.make.id,
       modelId: vehicle.model.id,
       limit: 12,
@@ -293,15 +274,13 @@ export function createPublicRouter(database: DatabaseConnection): Router {
     });
   });
   router.get('/vehicles/:referenceNo', async (request, response) => {
-    const market = z.string().trim().min(1).max(100).safeParse(request.query.market);
-    if (!market.success) throw validationError('market is required.');
     const referenceNo = z
       .string()
       .trim()
       .regex(/^GW-\d+$/)
       .safeParse(request.params.referenceNo);
     if (!referenceNo.success) throw validationError('referenceNo must use the GW-<number> format.');
-    const vehicle = await service.getPublishedVehicle(referenceNo.data, market.data);
+    const vehicle = await service.getPublishedVehicle(referenceNo.data);
     response
       .status(200)
       .json({ data: vehicle, meta: { requestId: getRequestContext()?.requestId } });
