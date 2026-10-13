@@ -171,12 +171,6 @@ function toPublicVehicle(row: VehicleRow, detail = false) {
       row.body_type_id === null
         ? null
         : { id: row.body_type_id, name: row.body_type_name, slug: row.body_type_slug },
-    stockCountry: {
-      id: row.stock_country_id,
-      iso2: row.stock_country_iso2,
-      iso3: row.stock_country_iso3,
-      name: row.stock_country_name
-    },
     primaryMedia:
       row.media_id === null
         ? null
@@ -318,9 +312,9 @@ export class PublicCatalogService {
         v.mileage_km, v.engine_cc, v.total_seats, v.weight_kg, v.total_weight_kg, v.max_loading_capacity_kg,
         v.length_cm, v.width_cm, v.height_cm, v.notice_type, v.notice_title, v.youtube_video_id,
         v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
-        v.trade_price_minor::text AS asking_price_minor,
+        COALESCE(v.purchase_cost_minor, v.trade_price_minor)::text AS asking_price_minor,
         v.available_discount_minor::text AS available_discount_minor,
-        v.price_currency_code::text AS currency_code,
+        COALESCE(v.purchase_cost_currency, v.price_currency_code, 'USD')::text AS currency_code,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug,
         bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
@@ -351,9 +345,9 @@ export class PublicCatalogService {
         v.mileage_km, v.engine_cc, v.total_seats, v.weight_kg, v.total_weight_kg, v.max_loading_capacity_kg,
         v.length_cm, v.width_cm, v.height_cm, v.notice_type, v.notice_title, v.youtube_video_id,
         v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
-        v.trade_price_minor::text AS asking_price_minor,
+        COALESCE(v.purchase_cost_minor, v.trade_price_minor)::text AS asking_price_minor,
         v.available_discount_minor::text AS available_discount_minor,
-        v.price_currency_code::text AS currency_code,
+        COALESCE(v.purchase_cost_currency, v.price_currency_code, 'USD')::text AS currency_code,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug, bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
       FROM vehicles v JOIN makes m ON m.id = v.make_id JOIN models mo ON mo.id = v.model_id JOIN countries c ON c.id = v.stock_country_id LEFT JOIN body_types bt ON bt.id = v.body_type_id
@@ -393,6 +387,19 @@ export class PublicCatalogService {
       })),
       features: features.map((item) => ({ id: item.id, name: item.name, category: item.category }))
     };
+  }
+
+  async getPublishedVehicleStockCountryId(referenceNo: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('vehicles')
+      .select('stock_country_id')
+      .where('reference_no', '=', referenceNo)
+      .where('status', '=', 'published')
+      .where('availability_status', '=', 'available')
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst();
+    if (!row) throw notFoundError;
+    return row.stock_country_id;
   }
 
   private ordering(sort: Sort) {

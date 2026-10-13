@@ -4729,7 +4729,7 @@ paths:
       tags:
         - Customer Account
       operationId: getApiV1MeFavorites
-      summary: List own public vehicle favorites
+      summary: List own public vehicle favorites with customer-visible USD asking prices
       description:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
@@ -5913,7 +5913,7 @@ components:
       name: greenway_refresh_token
   responses:
     PublicVehicle:
-      description: Published, available vehicle stocked in the vehicle stock country. Includes its asking price in USD; internal costs and minimum sale price are absent.
+      description: Published, available vehicle. Includes the configured customer-visible public price and currency; stock country, estimated local cost, internal notes, and minimum sale price are absent.
       content:
         application/json:
           schema:
@@ -6192,7 +6192,6 @@ components:
         - currencyCode
         - make
         - model
-        - stockCountry
       properties:
         id:
           type: string
@@ -6245,7 +6244,7 @@ components:
             - string
             - 'null'
           pattern: ^\d{1,18}$
-          description: Customer-visible asking price in USD minor units.
+          description: Customer-visible public price in whole configured currency units.
         availableDiscountMinor:
           type:
             - string
@@ -6255,7 +6254,7 @@ components:
         currencyCode:
           type: string
           pattern: ^[A-Z]{3}$
-          description: Currency used by the vehicle's USD asking price.
+          description: Currency used by the vehicle's customer-visible public price.
         mileageKm:
           type:
             - integer
@@ -6355,9 +6354,6 @@ components:
           type:
             - object
             - 'null'
-          additionalProperties: true
-        stockCountry:
-          type: object
           additionalProperties: true
         primaryMedia:
           type:
@@ -6890,6 +6886,7 @@ components:
             - string
             - 'null'
           pattern: ^\d{1,18}$
+          description: Customer-visible public price in whole currency units.
         purchaseCostCurrency:
           type:
             - string
@@ -6900,6 +6897,7 @@ components:
             - string
             - 'null'
           pattern: ^\d{1,18}$
+          description: Internal estimated local cost in whole currency units. Only available to administrators and the assigned salesperson.
         costNotes:
           type:
             - string
@@ -6916,7 +6914,7 @@ components:
             - string
             - 'null'
           pattern: ^\d{1,18}$
-          description: Customer-visible asking price in USD minor units.
+          description: Legacy customer-visible asking price in USD minor units.
         availableDiscountMinor:
           type:
             - string

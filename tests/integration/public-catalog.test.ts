@@ -139,10 +139,9 @@ integration('public catalog and vehicle APIs', () => {
     expect(body.data[0]).toMatchObject({
       referenceNo: fixture.referenceNo,
       title: 'Published vehicle',
-      askingPriceMinor: '25000000',
+      askingPriceMinor: '1234500',
       availableDiscountMinor: '500000',
-      currencyCode: 'USD',
-      stockCountry: { id: fixture.stockCountryId }
+      currencyCode: 'USD'
     });
     expect(JSON.stringify(response.body)).not.toContain('inventorySource');
     expect(JSON.stringify(response.body)).not.toContain('reviewNotes');
@@ -151,7 +150,7 @@ integration('public catalog and vehicle APIs', () => {
     expect(JSON.stringify(response.body)).not.toContain('purchaseCost');
     expect(JSON.stringify(response.body)).not.toContain('margin');
     expect(JSON.stringify(response.body)).not.toContain('Private Supplier');
-    expect(JSON.stringify(response.body)).not.toContain('1234500');
+    expect(JSON.stringify(response.body)).not.toContain('estimatedLocalCostMinor');
     expect(JSON.stringify(response.body)).not.toContain('private cost note');
     expect(JSON.stringify(response.body)).not.toContain('minimumSalePriceMinor');
     expect(JSON.stringify(response.body)).not.toContain('225000000');
@@ -165,9 +164,9 @@ integration('public catalog and vehicle APIs', () => {
     );
     expect(detail.status).toBe(200);
     const detailData = (detail.body as { data: Record<string, unknown> }).data;
-    expect(detailData).toMatchObject({ askingPriceMinor: '25000000', currencyCode: 'USD' });
+    expect(detailData).toMatchObject({ askingPriceMinor: '1234500', currencyCode: 'USD' });
     expect(JSON.stringify(detail.body)).not.toContain('Private Supplier');
-    expect(JSON.stringify(detail.body)).not.toContain('1234500');
+    expect(JSON.stringify(detail.body)).not.toContain('estimatedLocalCostMinor');
     expect(JSON.stringify(detail.body)).not.toContain('private cost note');
     expect(JSON.stringify(detail.body)).not.toContain('minimumSalePriceMinor');
     expect(JSON.stringify(detail.body)).not.toContain('225000000');

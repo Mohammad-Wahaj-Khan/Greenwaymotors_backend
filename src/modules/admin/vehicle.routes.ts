@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { type Kysely, type Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable } from 'kysely';
 import { z } from 'zod';
 import type {
   DB,
@@ -124,7 +124,7 @@ const costingInput = z
   })
   .refine(
     (value) => (value.purchaseCostMinor === null) === (value.purchaseCostCurrency === null),
-    'Purchase cost and currency must both be present or both null.'
+    'Public price and currency must both be present or both null.'
   );
 const vehiclePricingInput = z
   .strictObject({
@@ -202,6 +202,7 @@ function vehicleValues(input: {
   };
 }
 function toAdminVehicle(row: Selectable<Vehicles>, canReadSource: boolean) {
+  const usesConfiguredPublicPrice = row.purchase_cost_minor !== null;
   return {
     id: row.id,
     referenceNo: row.reference_no,
@@ -247,6 +248,13 @@ function toAdminVehicle(row: Selectable<Vehicles>, canReadSource: boolean) {
     featurePriority: row.feature_priority,
     stockCountryId: row.stock_country_id,
     stockCity: row.stock_city,
+    publicPriceMinor:
+      (usesConfiguredPublicPrice ? row.purchase_cost_minor : row.trade_price_minor) === null
+        ? null
+        : String(usesConfiguredPublicPrice ? row.purchase_cost_minor : row.trade_price_minor),
+    publicPriceCurrency: usesConfiguredPublicPrice
+      ? row.purchase_cost_currency ?? 'USD'
+      : row.price_currency_code,
     ...(canReadSource
       ? { inventorySourceId: row.inventory_source_id, stockNumber: row.stock_number, vin: row.vin }
       : {}),
@@ -291,8 +299,14 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
           .optional(),
         availabilityStatus: z
           .enum(['available', 'reserved', 'sourcing_hold', 'sold', 'unavailable'])
-          .optional()
-      }),
+          .optional(),
+        priceMin: amount.optional(),
+        priceMax: amount.optional()
+      }).refine(
+        (value) =>
+          !value.priceMin || !value.priceMax || BigInt(value.priceMin) <= BigInt(value.priceMax),
+        'priceMin cannot be greater than priceMax.'
+      ),
       req.query
     );
     const cursor = decodePageCursor(input.cursor);
@@ -300,6 +314,14 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
     if (input.status) query = query.where('status', '=', input.status);
     if (input.availabilityStatus)
       query = query.where('availability_status', '=', input.availabilityStatus);
+    if (input.priceMin)
+      query = query.where(
+        sql<boolean>`COALESCE(purchase_cost_minor, trade_price_minor) >= ${input.priceMin}`
+      );
+    if (input.priceMax)
+      query = query.where(
+        sql<boolean>`COALESCE(purchase_cost_minor, trade_price_minor) <= ${input.priceMax}`
+      );
     if (input.q)
       query = query.where((eb) =>
         eb.or([eb('title', 'ilike', `%${input.q}%`), eb('reference_no', 'ilike', `%${input.q}%`)])
@@ -317,9 +339,43 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
       .limit(input.limit + 1)
       .execute();
     const data = rows.slice(0, input.limit);
+    const media = data.length
+      ? await db
+          .selectFrom('vehicle_media')
+          .select(['vehicle_id', 'id', 'is_primary', 'sort_order', 'thumb_url', 'url'])
+          .where(
+            'vehicle_id',
+            'in',
+            data.map((vehicle) => vehicle.id)
+          )
+          .orderBy('vehicle_id')
+          .orderBy('is_primary', 'desc')
+          .orderBy('sort_order')
+          .execute()
+      : [];
+    const primaryMediaByVehicle = new Map<string, {
+      id: string;
+      isPrimary: boolean;
+      sortOrder: number;
+      thumbUrl: string | null;
+      url: string;
+    }>();
+    for (const item of media) {
+      if (primaryMediaByVehicle.has(item.vehicle_id)) continue;
+      primaryMediaByVehicle.set(item.vehicle_id, {
+        id: item.id,
+        isPrimary: item.is_primary,
+        sortOrder: item.sort_order,
+        thumbUrl: item.thumb_url,
+        url: item.url
+      });
+    }
     sendPage(
       res,
-      data.map((row) => toAdminVehicle(row, req.auth!.permissions.has('inventory_source.read'))),
+      data.map((row) => ({
+        ...toAdminVehicle(row, req.auth!.permissions.has('inventory_source.read')),
+        primaryMedia: primaryMediaByVehicle.get(row.id) ?? null
+      })),
       input.limit,
       rows.length > input.limit && data.at(-1) ? encodePageCursor(data.at(-1)!) : null
     );
@@ -577,7 +633,9 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
       .execute();
     sendData(res, rows);
   });
-  router.get('/vehicles/:id/pricing', requirePermission('vehicle.pricing.floor.read'), async (req, res) => {
+  router.get('/vehicles/:id/pricing', async (req, res) => {
+    const canReadFloor = req.auth!.permissions.has('vehicle.pricing.floor.read');
+    if (!canReadFloor && !req.auth!.permissions.has('vehicle.read_all')) throw forbiddenError();
     const row = await ensureVehicle(db, parseUuid(req.params.id));
     sendData(res, {
       vehicleId: row.id,
@@ -585,8 +643,12 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
       askingPriceMinor: row.trade_price_minor === null ? null : String(row.trade_price_minor),
       availableDiscountMinor:
         row.available_discount_minor === null ? null : String(row.available_discount_minor),
-      minimumSalePriceMinor:
-        row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor)
+      ...(canReadFloor
+        ? {
+            minimumSalePriceMinor:
+              row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor)
+          }
+        : {})
     });
   });
   router.put('/vehicles/:id/pricing', requirePermission('vehicle.pricing.manage'), async (req, res) => {
@@ -618,14 +680,25 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
         row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor)
     });
   });
-  router.get('/vehicles/:id/costing', requirePermission('vehicle.cost.read'), async (req, res) => {
+  router.get('/vehicles/:id/costing', async (req, res) => {
     const row = await ensureVehicle(db, parseUuid(req.params.id));
+    const isAdministrator =
+      req.auth!.permissions.has('lead.assign') || req.auth!.permissions.has('vehicle.cost.update');
+    const isAssignedSalesperson = !isAdministrator
+      ? await db
+          .selectFrom('leads')
+          .select('id')
+          .where('vehicle_id', '=', row.id)
+          .where('assigned_to', '=', req.auth!.user.id)
+          .executeTakeFirst()
+      : undefined;
+    if (!isAdministrator && !isAssignedSalesperson) throw forbiddenError();
     sendData(res, {
       vehicleId: row.id,
       purchaseCostMinor: row.purchase_cost_minor,
       purchaseCostCurrency: row.purchase_cost_currency,
       estimatedLocalCostMinor: row.estimated_local_cost_minor,
-      costNotes: row.cost_notes
+      ...(isAdministrator ? { costNotes: row.cost_notes } : {})
     });
   });
   router.put(
@@ -640,6 +713,10 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
           .set({
             purchase_cost_minor: input.purchaseCostMinor,
             purchase_cost_currency: input.purchaseCostCurrency,
+            // The public catalog still supports legacy price records. Keep that field in
+            // sync so a saved public price is immediately consistent in every listing path.
+            trade_price_minor: input.purchaseCostMinor,
+            price_currency_code: input.purchaseCostCurrency ?? 'USD',
             estimated_local_cost_minor: input.estimatedLocalCostMinor,
             cost_notes: input.costNotes
           })

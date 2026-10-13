@@ -260,8 +260,9 @@ export function createPublicRouter(database: DatabaseConnection): Router {
       .safeParse(request.params.referenceNo);
     if (!referenceNo.success) throw validationError('referenceNo is invalid.');
     const vehicle = await service.getPublishedVehicle(referenceNo.data);
+    const stockCountryId = await service.getPublishedVehicleStockCountryId(referenceNo.data);
     const result = await service.listPublishedVehicles({
-      stockCountryIds: [vehicle.stockCountry.id],
+      stockCountryIds: [stockCountryId],
       makeId: vehicle.make.id,
       modelId: vehicle.model.id,
       limit: 12,

@@ -61,7 +61,10 @@ function canUpdate(req: Parameters<RequestHandler>[0], lead: Selectable<Leads>) 
     (req.auth!.permissions.has('lead.update_assigned') && lead.assigned_to === req.auth!.user.id)
   );
 }
-function leadDto(row: Selectable<Leads>) {
+function canReadEstimatedLocalCost(req: Parameters<RequestHandler>[0], lead: Selectable<Leads>) {
+  return req.auth!.permissions.has('lead.assign') || lead.assigned_to === req.auth!.user.id;
+}
+function leadDto(row: Selectable<Leads>, estimatedLocalCostMinor?: string | null) {
   return {
     id: row.id,
     referenceNo: row.reference_no,
@@ -93,8 +96,36 @@ function leadDto(row: Selectable<Leads>) {
     firstContactedAt: row.first_contacted_at,
     closedAt: row.closed_at,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    ...(estimatedLocalCostMinor === undefined ? {} : { estimatedLocalCostMinor })
   };
+}
+async function estimatedCostsForReadableLeads(
+  db: Kysely<DB>,
+  req: Parameters<RequestHandler>[0],
+  leads: readonly Selectable<Leads>[]
+) {
+  const vehicleIds = [
+    ...new Set(
+      leads
+        .filter((lead) => canReadEstimatedLocalCost(req, lead))
+        .map((lead) => lead.vehicle_id)
+    )
+  ];
+  if (!vehicleIds.length) return new Map<string, string | null>();
+  const costs = await db
+    .selectFrom('vehicles')
+    .select(['id', 'estimated_local_cost_minor'])
+    .where('id', 'in', vehicleIds)
+    .execute();
+  return new Map(
+    costs.map((vehicle) => [
+      vehicle.id,
+      vehicle.estimated_local_cost_minor === null
+        ? null
+        : String(vehicle.estimated_local_cost_minor)
+    ])
+  );
 }
 async function loadLead(db: Kysely<DB>, ref: string) {
   const lead = await db
@@ -216,9 +247,10 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
       .limit(input.limit + 1)
       .execute();
     const data = rows.slice(0, input.limit);
+    const estimatedCosts = await estimatedCostsForReadableLeads(db, req, data);
     sendPage(
       res,
-      data.map(leadDto),
+      data.map((lead) => leadDto(lead, estimatedCosts.get(lead.vehicle_id))),
       input.limit,
       rows.length > input.limit && data.at(-1) ? encodePageCursor(data.at(-1)!) : null
     );
@@ -229,7 +261,8 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
     async (req, res) => {
       const lead = await loadLead(db, parseInput(reference, req.params.referenceNo));
       if (!canRead(req, lead)) throw notFoundError;
-      const [activities, followups, stockCountry, vehicle] = await Promise.all([
+      const canReadEstimate = canReadEstimatedLocalCost(req, lead);
+      const [activities, followups, stockCountry, vehicle, estimatedCost] = await Promise.all([
         db
           .selectFrom('lead_activities')
           .select(['id', 'type', 'body', 'meta', 'actor_id', 'created_at'])
@@ -255,10 +288,26 @@ export function createStaffLeadsRouter(db: Kysely<DB>): Router {
           .selectFrom('vehicles')
           .select(['reference_no', 'title', 'status', 'availability_status'])
           .where('id', '=', lead.vehicle_id)
-          .executeTakeFirst()
+          .executeTakeFirst(),
+        canReadEstimate
+          ? db
+              .selectFrom('vehicles')
+              .select('estimated_local_cost_minor')
+              .where('id', '=', lead.vehicle_id)
+              .executeTakeFirst()
+          : Promise.resolve(undefined)
       ]);
       sendData(res, {
-        ...leadDto(lead),
+        ...leadDto(
+          lead,
+          canReadEstimate
+            ? estimatedCost?.estimated_local_cost_minor === null
+              ? null
+              : estimatedCost?.estimated_local_cost_minor === undefined
+                ? null
+                : String(estimatedCost.estimated_local_cost_minor)
+            : undefined
+        ),
         stockCountry: stockCountry ?? null,
         currentVehicle: vehicle ?? null,
         activities: activities.map((a) => ({

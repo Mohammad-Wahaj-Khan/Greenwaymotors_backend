@@ -49,6 +49,14 @@ const paging = z.object({
   offset: z.coerce.number().int().min(0).max(100000).default(0)
 });
 
+function customerVehicleSnapshot(snapshot: unknown): Record<string, unknown> {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return {};
+  const publicSnapshot = { ...(snapshot as Record<string, unknown>) };
+  delete publicSnapshot.stockCountryId;
+  delete publicSnapshot.stockCountryName;
+  return publicSnapshot;
+}
+
 export function createMeRouter(db: Kysely<DB>): Router {
   const r = Router();
   r.get('/favorites', async (req, res) => {
@@ -60,10 +68,13 @@ export function createMeRouter(db: Kysely<DB>): Router {
       make: string;
       model: string;
       year: number;
+      asking_price_minor: string | null;
+      currency_code: string;
       created_at: Date;
     }>`
    SELECT f.vehicle_id,v.reference_no,v.title,mk.name AS make,mo.name AS model,v.year,
-     v.stock_country_id,f.created_at
+     COALESCE(v.purchase_cost_minor, v.trade_price_minor)::text AS asking_price_minor,COALESCE(v.purchase_cost_currency, v.price_currency_code, 'USD')::text AS currency_code,
+     f.created_at
    FROM favorites f JOIN vehicles v ON v.id=f.vehicle_id JOIN makes mk ON mk.id=v.make_id
    JOIN models mo ON mo.id=v.model_id WHERE f.user_id=${req.auth!.user.id}
     AND v.status='published' AND v.availability_status='available' AND v.deleted_at IS NULL
@@ -166,7 +177,13 @@ export function createMeRouter(db: Kysely<DB>): Router {
       .limit(p.limit)
       .offset(p.offset)
       .execute();
-    sendData(res, rows);
+    sendData(
+      res,
+      rows.map((row) => ({
+        ...row,
+        vehicle_snapshot: customerVehicleSnapshot(row.vehicle_snapshot)
+      }))
+    );
   });
   r.get('/leads/:referenceNo', async (req, res) => {
     if (req.auth!.user.userType !== 'customer') throw validationError('Customer account required.');
@@ -177,7 +194,10 @@ export function createMeRouter(db: Kysely<DB>): Router {
       .where('customer_id', '=', req.auth!.user.id)
       .executeTakeFirst();
     if (!row) throw notFoundError;
-    sendData(res, row);
+    sendData(res, {
+      ...row,
+      vehicle_snapshot: customerVehicleSnapshot(row.vehicle_snapshot)
+    });
   });
   r.post('/deals/:dealReference/salesperson-rating', async (req, res) => {
     if (req.auth!.user.userType !== 'customer') {
