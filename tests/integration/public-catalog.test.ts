@@ -97,6 +97,12 @@ async function createFixture() {
     'INSERT INTO vehicle_markets (vehicle_id, market_id, is_active) VALUES ($1, $2, true)',
     [published.rows[0]!.id, market.rows[0]!.id]
   );
+  await pool.query(
+    `INSERT INTO vehicle_market_pricing
+      (vehicle_id, market_id, currency_code, asking_price_minor, minimum_sale_price_minor)
+     VALUES ($1, $2, 'PKR', 250000000, 225000000)`,
+    [published.rows[0]!.id, market.rows[0]!.id]
+  );
   await pool.query('INSERT INTO vehicle_features (vehicle_id, feature_id) VALUES ($1, $2)', [
     published.rows[0]!.id,
     feature.rows[0]!.id
@@ -150,7 +156,9 @@ integration('public catalog and vehicle APIs', () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0]).toMatchObject({
       referenceNo: fixture.referenceNo,
-      title: 'Published vehicle'
+      title: 'Published vehicle',
+      askingPriceMinor: '250000000',
+      currencyCode: 'PKR'
     });
     expect(JSON.stringify(response.body)).not.toContain('inventorySource');
     expect(JSON.stringify(response.body)).not.toContain('reviewNotes');
@@ -161,6 +169,8 @@ integration('public catalog and vehicle APIs', () => {
     expect(JSON.stringify(response.body)).not.toContain('Private Supplier');
     expect(JSON.stringify(response.body)).not.toContain('1234500');
     expect(JSON.stringify(response.body)).not.toContain('private cost note');
+    expect(JSON.stringify(response.body)).not.toContain('minimumSalePriceMinor');
+    expect(JSON.stringify(response.body)).not.toContain('225000000');
   });
 
   it('returns a published vehicle detail and keeps unpublished inventory private', async () => {
@@ -170,9 +180,13 @@ integration('public catalog and vehicle APIs', () => {
       `/api/v1/vehicles/${fixture.referenceNo}?market=${fixture.marketSlug}`
     );
     expect(detail.status).toBe(200);
+    const detailData = (detail.body as { data: Record<string, unknown> }).data;
+    expect(detailData).toMatchObject({ askingPriceMinor: '250000000', currencyCode: 'PKR' });
     expect(JSON.stringify(detail.body)).not.toContain('Private Supplier');
     expect(JSON.stringify(detail.body)).not.toContain('1234500');
     expect(JSON.stringify(detail.body)).not.toContain('private cost note');
+    expect(JSON.stringify(detail.body)).not.toContain('minimumSalePriceMinor');
+    expect(JSON.stringify(detail.body)).not.toContain('225000000');
     expect(
       (await request(api).get(`/api/v1/vehicles/GW-999999999?market=${fixture.marketSlug}`)).status
     ).toBe(404);

@@ -587,6 +587,17 @@ export interface VehicleMarkets {
   vehicle_id: string;
 }
 
+export interface VehicleMarketPricing {
+  asking_price_minor: Int8 | null;
+  available_discount_minor: Int8 | null;
+  currency_code: string;
+  market_id: string;
+  minimum_sale_price_minor: Int8 | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  vehicle_id: string;
+}
+
 export interface VehicleMedia {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -626,24 +637,39 @@ export interface Vehicles {
   doors: number | null;
   drive: DriveType | null;
   engine_cc: number | null;
+  engine_code: string | null;
+  engine_number: string | null;
   estimated_local_cost_minor: Int8 | null;
   exterior_color: string | null;
   fuel: FuelType | null;
+  grade: string | null;
+  height_cm: number | null;
   id: Generated<string>;
   interior_color: string | null;
   inventory_source_id: string | null;
+  length_cm: number | null;
   make_id: number;
+  manufacture_month: number | null;
+  manufacture_year: number | null;
+  max_loading_capacity_kg: number | null;
   mileage_km: number | null;
+  model_code: string | null;
   model_id: number;
+  notice_title: string | null;
+  notice_type: string | null;
   published_at: Timestamp | null;
   purchase_cost_currency: string | null;
   purchase_cost_minor: Int8 | null;
   reference_no: Generated<string>;
+  registration_month: number | null;
+  registration_year: number | null;
   reserved_at: Timestamp | null;
   review_notes: string | null;
   reviewed_at: Timestamp | null;
   reviewed_by: string | null;
   seats: number | null;
+  total_seats: number | null;
+  total_weight_kg: number | null;
   sold_at: Timestamp | null;
   status: Generated<VehicleStatus>;
   steering: SteeringType | null;
@@ -656,6 +682,9 @@ export interface Vehicles {
   variant: string | null;
   view_count: Generated<number>;
   vin: string | null;
+  weight_kg: number | null;
+  width_cm: number | null;
+  youtube_video_id: string | null;
   year: number;
 }
 
@@ -704,6 +733,7 @@ export interface DB {
   vehicle_import_jobs: VehicleImportJobs;
   vehicle_import_rows: VehicleImportRows;
   vehicle_markets: VehicleMarkets;
+  vehicle_market_pricing: VehicleMarketPricing;
   vehicle_media: VehicleMedia;
   vehicle_reservations: VehicleReservations;
   vehicles: Vehicles;

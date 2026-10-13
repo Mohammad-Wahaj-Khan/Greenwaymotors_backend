@@ -165,7 +165,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
           .set('Authorization', `Bearer ${content.token}`)
       ).status
     ).toBe(403);
-    const publicResponse = await request(api).get('/api/v1/vehicles');
+    const publicResponse = await request(api).get('/api/v1/vehicles?market=pakistan');
     expect(publicResponse.status).toBe(200);
     expect(JSON.stringify(publicResponse.body)).not.toContain('Secret Supplier');
     expect(JSON.stringify(publicResponse.body)).not.toContain('1234500');
@@ -191,10 +191,40 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
         stockCountryId: f.stockId,
         title: 'Second Corolla',
         year: 2023,
+        modelCode: 'AXIO-G-2023',
+        grade: 'G',
+        manufactureYear: 2023,
+        manufactureMonth: 4,
+        registrationYear: 2024,
+        registrationMonth: 1,
+        engineNumber: 'PRIVATE-ENGINE-123',
+        engineCode: 'PRIVATE-CODE-45',
+        totalSeats: 5,
+        weightKg: 1100,
+        totalWeightKg: 1500,
+        maxLoadingCapacityKg: 400,
+        lengthCm: 440,
+        widthCm: 170,
+        heightCm: 145,
+        noticeType: 'promotion',
+        noticeTitle: 'Limited time offer',
+        youtubeVideoId: 'https://youtu.be/dQw4w9WgXcQ',
         inventorySourceId: (newSource.body as { data: { id: string } }).data.id
       });
     expect(createdVehicle.status).toBe(201);
     const id = (createdVehicle.body as { data: { id: string } }).data.id;
+    expect(
+      (createdVehicle.body as { data: Record<string, unknown> }).data
+    ).toMatchObject({
+      modelCode: 'AXIO-G-2023',
+      grade: 'G',
+      manufactureMonth: 4,
+      registrationMonth: 1,
+      engineNumber: 'PRIVATE-ENGINE-123',
+      totalSeats: 5,
+      maxLoadingCapacityKg: 400,
+      youtubeVideoId: 'dQw4w9WgXcQ'
+    });
     expect(
       (
         await request(api)
@@ -218,8 +248,22 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(2);
+    const publicCreated = await request(api).get(
+      `/api/v1/vehicles/${(createdVehicle.body as { data: { referenceNo: string } }).data.referenceNo}?market=pakistan`
+    );
+    expect(publicCreated.status).toBe(200);
+    expect((publicCreated.body as { data: Record<string, unknown> }).data).toMatchObject({
+      modelCode: 'AXIO-G-2023',
+      manufactureYear: 2023,
+      registrationYear: 2024,
+      noticeType: 'promotion',
+      youtubeVideoId: 'dQw4w9WgXcQ'
+    });
+    expect(JSON.stringify(publicCreated.body)).not.toContain('PRIVATE-ENGINE-123');
+    expect(JSON.stringify(publicCreated.body)).not.toContain('PRIVATE-CODE-45');
     expect(
       (
         await request(api)
@@ -228,7 +272,8 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(1);
     expect(
       (
@@ -245,12 +290,73 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(1);
     await pool.query("UPDATE markets SET status='inactive' WHERE id=$1", [f.marketId]);
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(0);
+  });
+
+  it('sets market asking and minimum sale prices while keeping the floor private', async () => {
+    const { app: api } = requireDependencies();
+    const administrator = await staff('super_admin');
+    const salesperson = await staff('sales_agent');
+    const content = await staff('content_manager');
+    const f = await fixture();
+    const path = `/api/v1/admin/vehicles/${f.vehicleId}/markets/${f.marketId}/pricing`;
+
+    expect(
+      (await request(api).get(path).set('Authorization', `Bearer ${content.token}`)).status
+    ).toBe(403);
+
+    const update = await request(api)
+      .put(path)
+      .set('Authorization', `Bearer ${administrator.token}`)
+      .send({
+        askingPriceMinor: '250000000',
+        minimumSalePriceMinor: '225000000',
+        availableDiscountMinor: '5000000'
+      });
+    expect(update.status, update.text).toBe(200);
+    const updateData = (update.body as { data: Record<string, unknown> }).data;
+    expect(updateData).toMatchObject({
+      currencyCode: 'PKR',
+      askingPriceMinor: '250000000',
+      minimumSalePriceMinor: '225000000',
+      availableDiscountMinor: '5000000'
+    });
+
+    const floor = await request(api).get(path).set('Authorization', `Bearer ${salesperson.token}`);
+    expect(floor.status).toBe(200);
+    const floorData = (floor.body as { data: { minimumSalePriceMinor: string } }).data;
+    expect(floorData.minimumSalePriceMinor).toBe('225000000');
+    const salespersonWrite = await request(api)
+      .put(path)
+      .set('Authorization', `Bearer ${salesperson.token}`)
+      .send({ askingPriceMinor: '250000000', minimumSalePriceMinor: '225000000' });
+    expect(salespersonWrite.status).toBe(403);
+
+    const invalid = await request(api)
+      .put(path)
+      .set('Authorization', `Bearer ${administrator.token}`)
+      .send({ askingPriceMinor: '220000000', minimumSalePriceMinor: '225000000' });
+    expect(invalid.status).toBe(422);
+
+    const publicVehicle = await request(api).get(
+      `/api/v1/vehicles/${f.referenceNo}?market=pakistan`
+    );
+    expect(publicVehicle.status).toBe(200);
+    const publicData = (publicVehicle.body as { data: Record<string, unknown> }).data;
+    expect(publicData).toMatchObject({
+      askingPriceMinor: '250000000',
+      availableDiscountMinor: '5000000',
+      currencyCode: 'PKR'
+    });
+    expect(JSON.stringify(publicVehicle.body)).not.toContain('minimumSalePriceMinor');
+    expect(JSON.stringify(publicVehicle.body)).not.toContain('225000000');
   });
 
   it('queues encrypted verification mail, enforces notification ownership, and revokes suspended staff sessions', async () => {
@@ -901,6 +1007,12 @@ integration('Phase 4–5 commercial workflow', () => {
       "UPDATE vehicles SET purchase_cost_currency='PKR', estimated_local_cost_minor=250000 WHERE id=$1",
       [f.vehicleId]
     );
+    await pool.query(
+      `INSERT INTO vehicle_market_pricing
+        (vehicle_id, market_id, currency_code, asking_price_minor, minimum_sale_price_minor)
+       VALUES ($1, $2, 'PKR', 2000000, 1600000)`,
+      [f.vehicleId, f.marketId]
+    );
     const lead = await pool.query<{ id: string; reference_no: string }>(
       `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,market_id)
        VALUES ($1,'{"title":"Exact Corolla"}','Quote Buyer','buyer@example.test','qualified',$2,$3)
@@ -944,6 +1056,16 @@ integration('Phase 4–5 commercial workflow', () => {
       internalNotes: 'private pricing note',
       items: [{ kind: 'documentation', label, quantity: 1, unitAmountMinor: 12500 }]
     });
+    const belowFloor = await request(api)
+      .post(`/api/v1/staff/quotes/${quoteRef}/versions`)
+      .set('Authorization', `Bearer ${agent.token}`)
+      .send({
+        ...versionInput('Below minimum sale price'),
+        items: [
+          { kind: 'discount', label: 'Extra discount', quantity: 1, unitAmountMinor: -100000 }
+        ]
+      });
+    expect(belowFloor.status, belowFloor.text).toBe(409);
     const v1 = await request(api)
       .post(`/api/v1/staff/quotes/${quoteRef}/versions`)
       .set('Authorization', `Bearer ${agent.token}`)
@@ -1105,7 +1227,8 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]!.status
     ).toBe('accepted');
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(0);
 
     for (const status of ['source_confirmed', 'processing', 'ready_for_delivery']) {
@@ -1152,7 +1275,8 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]
     ).toMatchObject({ status: 'completed', availability_status: 'sold' });
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(0);
   });
 
@@ -1189,7 +1313,8 @@ integration('Phase 4–5 commercial workflow', () => {
       f.vehicleId
     ]);
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
+      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+        .data
     ).toHaveLength(1);
     const replacementKey = `reserve-c-${randomUUID()}`;
     const replacement = await reserve(replacementKey);

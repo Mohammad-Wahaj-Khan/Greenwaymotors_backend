@@ -17,6 +17,7 @@ tags:
   - name: Admin - Vehicles
   - name: Admin - Markets
   - name: Admin - Costing
+  - name: Admin - Pricing
   - name: Sales - Leads
   - name: Sales - Follow-ups
   - name: Sales - Quotes
@@ -1116,6 +1117,51 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Data'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/vehicles/{id}/markets/{marketId}/pricing:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+      - name: marketId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Admin - Pricing
+      operationId: adminGetVehicleMarketPricing
+      description: Returns the customer asking price and salesperson-only minimum sale price for an assigned market.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+    put:
+      tags:
+        - Admin - Pricing
+      operationId: adminReplaceVehicleMarketPricing
+      description: Sets the market-specific customer asking price and internal minimum sale price. The minimum is never included in public vehicle responses and is enforced when sales staff create quote versions.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleMarketPricingInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
   /api/v1/admin/vehicles/{id}/costing:
@@ -6169,7 +6215,7 @@ components:
       name: greenway_refresh_token
   responses:
     PublicVehicle:
-      description: Published, available vehicle eligible for the selected destination market. Source and cost fields are absent.
+      description: Published, available vehicle eligible for the selected destination market. Includes its asking price for that market; internal costs and minimum sale price are absent.
       content:
         application/json:
           schema:
@@ -6443,6 +6489,8 @@ components:
         - title
         - condition
         - year
+        - askingPriceMinor
+        - currencyCode
         - make
         - model
         - stockCountry
@@ -6463,8 +6511,52 @@ components:
           type:
             - string
             - 'null'
+        modelCode:
+          type:
+            - string
+            - 'null'
+        grade:
+          type:
+            - string
+            - 'null'
         year:
           type: integer
+        manufactureYear:
+          type:
+            - integer
+            - 'null'
+        manufactureMonth:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 12
+        registrationYear:
+          type:
+            - integer
+            - 'null'
+        registrationMonth:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 12
+        askingPriceMinor:
+          type:
+            - string
+            - 'null'
+          pattern: ^\d{1,18}$
+          description: Customer-visible asking price for the selected market, in minor currency units.
+        availableDiscountMinor:
+          type:
+            - string
+            - 'null'
+          pattern: ^\d{1,18}$
+          description: Customer-visible discount amount for the selected market, in minor currency units.
+        currencyCode:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: Currency used by the selected market's asking price.
         mileageKm:
           type:
             - integer
@@ -6493,7 +6585,35 @@ components:
           type:
             - integer
             - 'null'
+        totalSeats:
+          type:
+            - integer
+            - 'null'
         doors:
+          type:
+            - integer
+            - 'null'
+        weightKg:
+          type:
+            - integer
+            - 'null'
+        totalWeightKg:
+          type:
+            - integer
+            - 'null'
+        maxLoadingCapacityKg:
+          type:
+            - integer
+            - 'null'
+        lengthCm:
+          type:
+            - integer
+            - 'null'
+        widthCm:
+          type:
+            - integer
+            - 'null'
+        heightCm:
           type:
             - integer
             - 'null'
@@ -6505,6 +6625,23 @@ components:
           type:
             - string
             - 'null'
+        noticeType:
+          type:
+            - string
+            - 'null'
+          enum:
+            - promotion
+            - caution
+            - null
+        noticeTitle:
+          type:
+            - string
+            - 'null'
+        youtubeVideoId:
+          type:
+            - string
+            - 'null'
+          pattern: ^[A-Za-z0-9_-]{11}$
         stockCity:
           type:
             - string
@@ -6846,6 +6983,22 @@ components:
           type: integer
           minimum: 1950
           maximum: 2100
+        manufactureYear:
+          type: [integer, 'null']
+          minimum: 1950
+          maximum: 2100
+        manufactureMonth:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 12
+        registrationYear:
+          type: [integer, 'null']
+          minimum: 1950
+          maximum: 2100
+        registrationMonth:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 12
         inventorySourceId:
           type:
             - string
@@ -6868,6 +7021,10 @@ components:
           type:
             - string
             - 'null'
+        modelCode:
+          type: [string, 'null']
+        grade:
+          type: [string, 'null']
         bodyTypeId:
           type:
             - integer
@@ -6880,6 +7037,10 @@ components:
           type:
             - integer
             - 'null'
+        engineNumber:
+          type: [string, 'null']
+        engineCode:
+          type: [string, 'null']
         fuel:
           type:
             - string
@@ -6900,10 +7061,24 @@ components:
           type:
             - integer
             - 'null'
+        totalSeats:
+          type: [integer, 'null']
         doors:
           type:
             - integer
             - 'null'
+        weightKg:
+          type: [integer, 'null']
+        totalWeightKg:
+          type: [integer, 'null']
+        maxLoadingCapacityKg:
+          type: [integer, 'null']
+        lengthCm:
+          type: [integer, 'null']
+        widthCm:
+          type: [integer, 'null']
+        heightCm:
+          type: [integer, 'null']
         exteriorColor:
           type:
             - string
@@ -6912,6 +7087,14 @@ components:
           type:
             - string
             - 'null'
+        noticeType:
+          type: [string, 'null']
+          enum: [promotion, caution, null]
+        noticeTitle:
+          type: [string, 'null']
+        youtubeVideoId:
+          type: [string, 'null']
+          description: Accepts an 11-character YouTube video ID or a YouTube URL.
         stockCity:
           type:
             - string
@@ -6934,6 +7117,22 @@ components:
           type: string
         year:
           type: integer
+        manufactureYear:
+          type: [integer, 'null']
+          minimum: 1950
+          maximum: 2100
+        manufactureMonth:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 12
+        registrationYear:
+          type: [integer, 'null']
+          minimum: 1950
+          maximum: 2100
+        registrationMonth:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 12
         inventorySourceId:
           type:
             - string
@@ -6956,6 +7155,10 @@ components:
           type:
             - string
             - 'null'
+        modelCode:
+          type: [string, 'null']
+        grade:
+          type: [string, 'null']
         bodyTypeId:
           type:
             - integer
@@ -6968,6 +7171,10 @@ components:
           type:
             - integer
             - 'null'
+        engineNumber:
+          type: [string, 'null']
+        engineCode:
+          type: [string, 'null']
         fuel:
           type:
             - string
@@ -6988,10 +7195,24 @@ components:
           type:
             - integer
             - 'null'
+        totalSeats:
+          type: [integer, 'null']
         doors:
           type:
             - integer
             - 'null'
+        weightKg:
+          type: [integer, 'null']
+        totalWeightKg:
+          type: [integer, 'null']
+        maxLoadingCapacityKg:
+          type: [integer, 'null']
+        lengthCm:
+          type: [integer, 'null']
+        widthCm:
+          type: [integer, 'null']
+        heightCm:
+          type: [integer, 'null']
         exteriorColor:
           type:
             - string
@@ -7000,6 +7221,14 @@ components:
           type:
             - string
             - 'null'
+        noticeType:
+          type: [string, 'null']
+          enum: [promotion, caution, null]
+        noticeTitle:
+          type: [string, 'null']
+        youtubeVideoId:
+          type: [string, 'null']
+          description: Accepts an 11-character YouTube video ID or a YouTube URL.
         stockCity:
           type:
             - string
@@ -7086,6 +7315,31 @@ components:
           type:
             - string
             - 'null'
+    VehicleMarketPricingInput:
+      type: object
+      additionalProperties: false
+      required:
+        - askingPriceMinor
+        - minimumSalePriceMinor
+      properties:
+        askingPriceMinor:
+          type:
+            - string
+            - 'null'
+          pattern: ^\d{1,18}$
+          description: Customer-visible asking price for this market, in minor currency units.
+        availableDiscountMinor:
+          type:
+            - string
+            - 'null'
+          pattern: ^\d{1,18}$
+          description: Optional customer-visible discount amount for the market.
+        minimumSalePriceMinor:
+          type:
+            - string
+            - 'null'
+          pattern: ^\d{1,18}$
+          description: Salesperson-only floor. Quotes cannot total less than this amount.
     PresignUploadInput:
       type: object
       additionalProperties: false

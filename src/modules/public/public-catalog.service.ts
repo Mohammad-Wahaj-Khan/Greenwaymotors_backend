@@ -46,9 +46,25 @@ interface VehicleRow {
   description: string | null;
   condition: string;
   variant: string | null;
+  model_code: string | null;
+  grade: string | null;
   year: number;
+  manufacture_year: number | null;
+  manufacture_month: number | null;
+  registration_year: number | null;
+  registration_month: number | null;
   mileage_km: number | null;
   engine_cc: number | null;
+  total_seats: number | null;
+  weight_kg: number | null;
+  total_weight_kg: number | null;
+  max_loading_capacity_kg: number | null;
+  length_cm: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
+  notice_type: string | null;
+  notice_title: string | null;
+  youtube_video_id: string | null;
   fuel: string | null;
   transmission: string | null;
   drive: string | null;
@@ -73,6 +89,9 @@ interface VehicleRow {
   stock_country_iso2: string;
   stock_country_iso3: string;
   stock_country_name: string;
+  asking_price_minor: string | null;
+  available_discount_minor: string | null;
+  currency_code: string;
   media_id: string | null;
   media_type: string | null;
   media_url: string | null;
@@ -116,9 +135,25 @@ function toPublicVehicle(row: VehicleRow, detail = false) {
     title: row.title,
     condition: row.condition,
     variant: row.variant,
+    modelCode: row.model_code,
+    grade: row.grade,
     year: row.year,
+    manufactureYear: row.manufacture_year,
+    manufactureMonth: row.manufacture_month,
+    registrationYear: row.registration_year,
+    registrationMonth: row.registration_month,
     mileageKm: row.mileage_km,
     engineCc: row.engine_cc,
+    totalSeats: row.total_seats,
+    weightKg: row.weight_kg,
+    totalWeightKg: row.total_weight_kg,
+    maxLoadingCapacityKg: row.max_loading_capacity_kg,
+    lengthCm: row.length_cm,
+    widthCm: row.width_cm,
+    heightCm: row.height_cm,
+    noticeType: row.notice_type,
+    noticeTitle: row.notice_title,
+    youtubeVideoId: row.youtube_video_id,
     fuel: row.fuel,
     transmission: row.transmission,
     drive: row.drive,
@@ -128,6 +163,9 @@ function toPublicVehicle(row: VehicleRow, detail = false) {
     exteriorColor: row.exterior_color,
     interiorColor: row.interior_color,
     stockCity: row.stock_city,
+    askingPriceMinor: row.asking_price_minor,
+    availableDiscountMinor: row.available_discount_minor,
+    currencyCode: row.currency_code,
     make: { id: row.make_id, name: row.make_name, slug: row.make_slug, logoUrl: row.make_logo_url },
     model: { id: row.model_id, name: row.model_name, slug: row.model_slug },
     bodyType:
@@ -304,12 +342,21 @@ export class PublicCatalogService {
       );
     if (cursor) where.push(this.cursorCondition(cursor));
     const result = await sql<VehicleRow>`
-      SELECT v.id, v.reference_no, v.title, v.description, v.condition::text, v.variant, v.year, v.mileage_km, v.engine_cc,
+      SELECT v.id, v.reference_no, v.title, v.description, v.condition::text, v.variant, v.model_code, v.grade, v.year,
+        v.manufacture_year, v.manufacture_month, v.registration_year, v.registration_month,
+        v.mileage_km, v.engine_cc, v.total_seats, v.weight_kg, v.total_weight_kg, v.max_loading_capacity_kg,
+        v.length_cm, v.width_cm, v.height_cm, v.notice_type, v.notice_title, v.youtube_video_id,
         v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
+        vehicle_pricing.asking_price_minor::text AS asking_price_minor,
+        vehicle_pricing.available_discount_minor::text AS available_discount_minor,
+        COALESCE(vehicle_pricing.currency_code, selected_market.currency_code) AS currency_code,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug,
         bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
       FROM vehicles v JOIN makes m ON m.id = v.make_id JOIN models mo ON mo.id = v.model_id JOIN countries c ON c.id = v.stock_country_id
+      LEFT JOIN markets selected_market ON selected_market.slug = ${filters.market}
+      LEFT JOIN vehicle_markets selected_vehicle_market ON selected_vehicle_market.vehicle_id = v.id AND selected_vehicle_market.market_id = selected_market.id
+      LEFT JOIN vehicle_market_pricing vehicle_pricing ON vehicle_pricing.vehicle_id = selected_vehicle_market.vehicle_id AND vehicle_pricing.market_id = selected_vehicle_market.market_id
       LEFT JOIN body_types bt ON bt.id = v.body_type_id
       LEFT JOIN LATERAL (SELECT id, type, url, thumb_url, sort_order FROM vehicle_media WHERE vehicle_id = v.id ORDER BY is_primary DESC, sort_order, created_at LIMIT 1) media ON TRUE
       WHERE ${sql.join(where, sql` AND `)} ORDER BY ${this.ordering(filters.sort)} LIMIT ${filters.limit + 1}`.execute(
@@ -331,10 +378,20 @@ export class PublicCatalogService {
 
   async getPublishedVehicle(referenceNo: string, market: string) {
     const result = await sql<VehicleRow>`
-      SELECT v.id, v.reference_no, v.title, v.description, v.condition::text, v.variant, v.year, v.mileage_km, v.engine_cc, v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
+      SELECT v.id, v.reference_no, v.title, v.description, v.condition::text, v.variant, v.model_code, v.grade, v.year,
+        v.manufacture_year, v.manufacture_month, v.registration_year, v.registration_month,
+        v.mileage_km, v.engine_cc, v.total_seats, v.weight_kg, v.total_weight_kg, v.max_loading_capacity_kg,
+        v.length_cm, v.width_cm, v.height_cm, v.notice_type, v.notice_title, v.youtube_video_id,
+        v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
+        vehicle_pricing.asking_price_minor::text AS asking_price_minor,
+        vehicle_pricing.available_discount_minor::text AS available_discount_minor,
+        COALESCE(vehicle_pricing.currency_code, selected_market.currency_code) AS currency_code,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug, bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
       FROM vehicles v JOIN makes m ON m.id = v.make_id JOIN models mo ON mo.id = v.model_id JOIN countries c ON c.id = v.stock_country_id LEFT JOIN body_types bt ON bt.id = v.body_type_id
+      LEFT JOIN markets selected_market ON selected_market.slug = ${market}
+      LEFT JOIN vehicle_markets selected_vehicle_market ON selected_vehicle_market.vehicle_id = v.id AND selected_vehicle_market.market_id = selected_market.id
+      LEFT JOIN vehicle_market_pricing vehicle_pricing ON vehicle_pricing.vehicle_id = selected_vehicle_market.vehicle_id AND vehicle_pricing.market_id = selected_vehicle_market.market_id
       LEFT JOIN LATERAL (SELECT id, type, url, thumb_url, sort_order FROM vehicle_media WHERE vehicle_id = v.id ORDER BY is_primary DESC, sort_order, created_at LIMIT 1) media ON TRUE
       WHERE v.reference_no = ${referenceNo} AND v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL
         AND EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id = vm.market_id JOIN countries mc ON mc.id = mk.country_id WHERE vm.vehicle_id = v.id AND vm.is_active AND mk.status = 'active' AND mc.is_active AND mk.slug = ${market} AND (vm.available_from IS NULL OR vm.available_from <= now()) AND (vm.available_until IS NULL OR vm.available_until > now()))`.execute(

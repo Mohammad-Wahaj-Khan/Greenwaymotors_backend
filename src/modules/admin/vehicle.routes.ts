@@ -22,6 +22,47 @@ import {
 import { requirePermission } from '../../middleware/authorize.middleware.js';
 
 const nullableText = (max: number) => z.string().trim().max(max).nullable();
+const nullableYear = z.number().int().min(1950).max(2100).nullable().optional();
+const nullableMonth = z.number().int().min(1).max(12).nullable().optional();
+const youtubeVideoIdInput = z
+  .string()
+  .trim()
+  .max(2048)
+  .nullable()
+  .optional()
+  .transform((value, context) => {
+    if (value === undefined || value === null || value === '') return value === '' ? null : value;
+    let id = value;
+    if (value.includes('://')) {
+      try {
+        const url = new URL(value);
+        if (url.hostname === 'youtu.be' || url.hostname === 'www.youtu.be') {
+          id = url.pathname.slice(1);
+        } else if (
+          url.hostname === 'youtube.com' ||
+          url.hostname === 'www.youtube.com' ||
+          url.hostname === 'm.youtube.com'
+        ) {
+          id =
+            url.searchParams.get('v') ??
+            url.pathname.match(/^\/(?:embed|shorts)\/([^/]+)/)?.[1] ??
+            '';
+        } else {
+          id = '';
+        }
+      } catch {
+        id = '';
+      }
+    }
+    if (!/^[A-Za-z0-9_-]{11}$/.test(id)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Provide an 11-character YouTube video ID or valid YouTube URL.'
+      });
+      return z.NEVER;
+    }
+    return id;
+  });
 const vehicleInput = z.strictObject({
   makeId: z.number().int().positive(),
   modelId: z.number().int().positive(),
@@ -33,9 +74,17 @@ const vehicleInput = z.strictObject({
   vin: nullableText(100).optional(),
   condition: z.enum(['new', 'used']).optional(),
   variant: nullableText(150).optional(),
+  modelCode: nullableText(100).optional(),
+  grade: nullableText(100).optional(),
   bodyTypeId: z.number().int().positive().nullable().optional(),
+  manufactureYear: nullableYear,
+  manufactureMonth: nullableMonth,
+  registrationYear: nullableYear,
+  registrationMonth: nullableMonth,
   mileageKm: z.number().int().min(0).nullable().optional(),
   engineCc: z.number().int().min(0).nullable().optional(),
+  engineNumber: nullableText(100).optional(),
+  engineCode: nullableText(100).optional(),
   fuel: z
     .enum(['petrol', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric', 'lpg', 'cng', 'other'])
     .nullable()
@@ -44,9 +93,19 @@ const vehicleInput = z.strictObject({
   drive: z.enum(['fwd', 'rwd', 'awd', '4wd']).nullable().optional(),
   steering: z.enum(['lhd', 'rhd']).nullable().optional(),
   seats: z.number().int().positive().nullable().optional(),
+  totalSeats: z.number().int().min(0).nullable().optional(),
   doors: z.number().int().positive().nullable().optional(),
+  weightKg: z.number().int().min(0).nullable().optional(),
+  totalWeightKg: z.number().int().min(0).nullable().optional(),
+  maxLoadingCapacityKg: z.number().int().min(0).nullable().optional(),
+  lengthCm: z.number().int().min(0).nullable().optional(),
+  widthCm: z.number().int().min(0).nullable().optional(),
+  heightCm: z.number().int().min(0).nullable().optional(),
   exteriorColor: nullableText(100).optional(),
   interiorColor: nullableText(100).optional(),
+  noticeType: z.enum(['promotion', 'caution']).nullable().optional(),
+  noticeTitle: nullableText(200).optional(),
+  youtubeVideoId: youtubeVideoIdInput,
   stockCity: nullableText(100).optional(),
   description: nullableText(10000).optional()
 });
@@ -64,6 +123,30 @@ const costingInput = z
   .refine(
     (value) => (value.purchaseCostMinor === null) === (value.purchaseCostCurrency === null),
     'Purchase cost and currency must both be present or both null.'
+  );
+const vehicleMarketPricingInput = z
+  .strictObject({
+    askingPriceMinor: amount.nullable(),
+    minimumSalePriceMinor: amount.nullable(),
+    availableDiscountMinor: amount.nullable().optional()
+  })
+  .refine(
+    (value) => value.askingPriceMinor !== null || value.minimumSalePriceMinor !== null,
+    'At least one price must be provided.'
+  )
+  .refine(
+    (value) =>
+      value.askingPriceMinor === null ||
+      value.minimumSalePriceMinor === null ||
+      BigInt(value.minimumSalePriceMinor) <= BigInt(value.askingPriceMinor),
+    'Minimum sale price cannot exceed the customer asking price.'
+  )
+  .refine(
+    (value) =>
+      value.availableDiscountMinor == null ||
+      (value.askingPriceMinor !== null &&
+        BigInt(value.availableDiscountMinor) <= BigInt(value.askingPriceMinor)),
+    'Available discount requires an asking price and cannot exceed it.'
   );
 const eligibilityInput = z.strictObject({
   markets: z
@@ -103,17 +186,37 @@ function vehicleValues(input: {
     ...(input.vin !== undefined && { vin: input.vin }),
     ...(input.condition !== undefined && { condition: input.condition }),
     ...(input.variant !== undefined && { variant: input.variant }),
+    ...(input.modelCode !== undefined && { model_code: input.modelCode }),
+    ...(input.grade !== undefined && { grade: input.grade }),
     ...(input.bodyTypeId !== undefined && { body_type_id: input.bodyTypeId }),
+    ...(input.manufactureYear !== undefined && { manufacture_year: input.manufactureYear }),
+    ...(input.manufactureMonth !== undefined && { manufacture_month: input.manufactureMonth }),
+    ...(input.registrationYear !== undefined && { registration_year: input.registrationYear }),
+    ...(input.registrationMonth !== undefined && { registration_month: input.registrationMonth }),
     ...(input.mileageKm !== undefined && { mileage_km: input.mileageKm }),
     ...(input.engineCc !== undefined && { engine_cc: input.engineCc }),
+    ...(input.engineNumber !== undefined && { engine_number: input.engineNumber }),
+    ...(input.engineCode !== undefined && { engine_code: input.engineCode }),
     ...(input.fuel !== undefined && { fuel: input.fuel }),
     ...(input.transmission !== undefined && { transmission: input.transmission }),
     ...(input.drive !== undefined && { drive: input.drive }),
     ...(input.steering !== undefined && { steering: input.steering }),
     ...(input.seats !== undefined && { seats: input.seats }),
+    ...(input.totalSeats !== undefined && { total_seats: input.totalSeats }),
     ...(input.doors !== undefined && { doors: input.doors }),
+    ...(input.weightKg !== undefined && { weight_kg: input.weightKg }),
+    ...(input.totalWeightKg !== undefined && { total_weight_kg: input.totalWeightKg }),
+    ...(input.maxLoadingCapacityKg !== undefined && {
+      max_loading_capacity_kg: input.maxLoadingCapacityKg
+    }),
+    ...(input.lengthCm !== undefined && { length_cm: input.lengthCm }),
+    ...(input.widthCm !== undefined && { width_cm: input.widthCm }),
+    ...(input.heightCm !== undefined && { height_cm: input.heightCm }),
     ...(input.exteriorColor !== undefined && { exterior_color: input.exteriorColor }),
     ...(input.interiorColor !== undefined && { interior_color: input.interiorColor }),
+    ...(input.noticeType !== undefined && { notice_type: input.noticeType }),
+    ...(input.noticeTitle !== undefined && { notice_title: input.noticeTitle }),
+    ...(input.youtubeVideoId !== undefined && { youtube_video_id: input.youtubeVideoId }),
     ...(input.stockCity !== undefined && { stock_city: input.stockCity }),
     ...(input.description !== undefined && { description: input.description })
   };
@@ -129,19 +232,37 @@ function toAdminVehicle(row: Selectable<Vehicles>, canReadSource: boolean) {
     makeId: row.make_id,
     modelId: row.model_id,
     variant: row.variant,
+    modelCode: row.model_code,
+    grade: row.grade,
     bodyTypeId: row.body_type_id,
     year: row.year,
+    manufactureYear: row.manufacture_year,
+    manufactureMonth: row.manufacture_month,
+    registrationYear: row.registration_year,
+    registrationMonth: row.registration_month,
     condition: row.condition,
     mileageKm: row.mileage_km,
     engineCc: row.engine_cc,
+    engineNumber: row.engine_number,
+    engineCode: row.engine_code,
     fuel: row.fuel,
     transmission: row.transmission,
     drive: row.drive,
     steering: row.steering,
     seats: row.seats,
+    totalSeats: row.total_seats,
     doors: row.doors,
+    weightKg: row.weight_kg,
+    totalWeightKg: row.total_weight_kg,
+    maxLoadingCapacityKg: row.max_loading_capacity_kg,
+    lengthCm: row.length_cm,
+    widthCm: row.width_cm,
+    heightCm: row.height_cm,
     exteriorColor: row.exterior_color,
     interiorColor: row.interior_color,
+    noticeType: row.notice_type,
+    noticeTitle: row.notice_title,
+    youtubeVideoId: row.youtube_video_id,
     stockCountryId: row.stock_country_id,
     stockCity: row.stock_city,
     ...(canReadSource
@@ -558,6 +679,105 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
         });
       });
       sendData(res, { markets: input.markets });
+    }
+  );
+  router.get(
+    '/vehicles/:id/markets/:marketId/pricing',
+    requirePermission('vehicle.pricing.floor.read'),
+    async (req, res) => {
+      const vehicleId = parseUuid(req.params.id);
+      const marketId = parseUuid(req.params.marketId);
+      const row = await db
+        .selectFrom('vehicle_markets')
+        .innerJoin('markets', 'markets.id', 'vehicle_markets.market_id')
+        .leftJoin('vehicle_market_pricing', (join) =>
+          join
+            .onRef('vehicle_market_pricing.vehicle_id', '=', 'vehicle_markets.vehicle_id')
+            .onRef('vehicle_market_pricing.market_id', '=', 'vehicle_markets.market_id')
+        )
+        .select([
+          'markets.currency_code as market_currency_code',
+          'vehicle_market_pricing.currency_code as price_currency_code',
+          'vehicle_market_pricing.asking_price_minor',
+          'vehicle_market_pricing.minimum_sale_price_minor',
+          'vehicle_market_pricing.available_discount_minor'
+        ])
+        .where('vehicle_markets.vehicle_id', '=', vehicleId)
+        .where('vehicle_markets.market_id', '=', marketId)
+        .executeTakeFirst();
+      if (!row) throw notFoundError;
+      sendData(res, {
+        vehicleId,
+        marketId,
+        currencyCode: row.price_currency_code ?? row.market_currency_code,
+        marketCurrencyCode: row.market_currency_code,
+        askingPriceMinor: row.asking_price_minor === null ? null : String(row.asking_price_minor),
+        minimumSalePriceMinor:
+          row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor),
+        availableDiscountMinor:
+          row.available_discount_minor === null ? null : String(row.available_discount_minor)
+      });
+    }
+  );
+  router.put(
+    '/vehicles/:id/markets/:marketId/pricing',
+    requirePermission('vehicle.pricing.manage'),
+    async (req, res) => {
+      const input = parseInput(vehicleMarketPricingInput, req.body);
+      const vehicleId = parseUuid(req.params.id);
+      const marketId = parseUuid(req.params.marketId);
+      const result = await db.transaction().execute(async (trx) => {
+        const eligible = await trx
+          .selectFrom('vehicle_markets')
+          .innerJoin('markets', 'markets.id', 'vehicle_markets.market_id')
+          .select(['markets.currency_code'])
+          .where('vehicle_markets.vehicle_id', '=', vehicleId)
+          .where('vehicle_markets.market_id', '=', marketId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!eligible) throw notFoundError;
+        const row = await trx
+          .insertInto('vehicle_market_pricing')
+          .values({
+            vehicle_id: vehicleId,
+            market_id: marketId,
+            currency_code: eligible.currency_code,
+            asking_price_minor: input.askingPriceMinor,
+            minimum_sale_price_minor: input.minimumSalePriceMinor,
+            available_discount_minor: input.availableDiscountMinor ?? null,
+            updated_by: req.auth!.user.id
+          })
+          .onConflict((conflict) =>
+            conflict.columns(['vehicle_id', 'market_id']).doUpdateSet({
+              currency_code: eligible.currency_code,
+              asking_price_minor: input.askingPriceMinor,
+              minimum_sale_price_minor: input.minimumSalePriceMinor,
+              available_discount_minor: input.availableDiscountMinor ?? null,
+              updated_by: req.auth!.user.id,
+              updated_at: new Date()
+            })
+          )
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        await audit(trx, req.auth!.user.id, 'vehicle.market_pricing.update', 'vehicle', vehicleId, {
+          marketId,
+          currencyCode: row.currency_code,
+          askingPriceSet: row.asking_price_minor !== null,
+          minimumSalePriceSet: row.minimum_sale_price_minor !== null
+        });
+        return row;
+      });
+      sendData(res, {
+        vehicleId,
+        marketId,
+        currencyCode: result.currency_code,
+        askingPriceMinor:
+          result.asking_price_minor === null ? null : String(result.asking_price_minor),
+        minimumSalePriceMinor:
+          result.minimum_sale_price_minor === null ? null : String(result.minimum_sale_price_minor),
+        availableDiscountMinor:
+          result.available_discount_minor === null ? null : String(result.available_discount_minor)
+      });
     }
   );
   router.get('/vehicles/:id/costing', requirePermission('vehicle.cost.read'), async (req, res) => {

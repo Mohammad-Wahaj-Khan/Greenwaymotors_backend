@@ -856,6 +856,25 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
       const customerTotal = internal + markup + customerCharges;
       if (customerTotal < 0n)
         throw validationError('Calculated customer total cannot be negative.');
+      const marketPricing = quote.lead_market_id
+        ? await trx
+            .selectFrom('vehicle_market_pricing')
+            .select(['currency_code', 'minimum_sale_price_minor'])
+            .where('vehicle_id', '=', vehicle.id)
+            .where('market_id', '=', quote.lead_market_id)
+            .forUpdate()
+            .executeTakeFirst()
+        : undefined;
+      if (marketPricing && marketPricing.currency_code !== quote.currency_code)
+        throw conflictError(
+          'Vehicle market price currency does not match the quote currency. Update vehicle pricing before quoting.'
+        );
+      if (
+        marketPricing?.minimum_sale_price_minor !== null &&
+        marketPricing?.minimum_sale_price_minor !== undefined &&
+        customerTotal < BigInt(marketPricing.minimum_sale_price_minor)
+      )
+        throw conflictError('Quote total cannot be lower than the configured minimum sale price.');
       const margin = customerTotal - internal;
       const calculatedBps = internal === 0n ? null : (margin * 10000n) / internal;
       if (
