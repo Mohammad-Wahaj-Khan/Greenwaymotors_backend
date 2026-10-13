@@ -6,7 +6,7 @@ import type { DB } from '../../generated/database.types.js';
 type Sort = 'newest' | 'oldest' | 'year_desc' | 'year_asc' | 'mileage_asc' | 'mileage_desc';
 
 export interface VehicleListFilters {
-  market: string;
+  stockCountryIds?: number[] | undefined;
   featuredOnly?: boolean | undefined;
   q?: string | undefined;
   makeId?: number | undefined;
@@ -32,7 +32,6 @@ export interface VehicleListFilters {
   doors?: number | undefined;
   exteriorColor?: string | undefined;
   interiorColor?: string | undefined;
-  stockCountryId?: number | undefined;
   featureIds: number[];
   sort: Sort;
   cursor?: string | undefined;
@@ -195,58 +194,6 @@ function toPublicVehicle(row: VehicleRow, detail = false) {
 export class PublicCatalogService {
   constructor(private readonly db: Kysely<DB>) {}
 
-  async listMarkets() {
-    const result = await sql<{
-      slug: string;
-      currency_code: string;
-      locale: string;
-      iso2: string;
-      name: string;
-    }>`
-      SELECT m.slug, m.currency_code, m.locale, c.iso2, c.name FROM markets m
-      JOIN countries c ON c.id = m.country_id WHERE m.status = 'active' AND c.is_active
-      ORDER BY c.name`.execute(this.db);
-    return result.rows.map((row) => ({
-      slug: row.slug,
-      currencyCode: row.currency_code,
-      locale: row.locale,
-      country: { iso2: row.iso2, name: row.name }
-    }));
-  }
-
-  async getMarket(slug: string) {
-    const result = await sql<{
-      slug: string;
-      currency_code: string;
-      locale: string;
-      sales_email: string | null;
-      sales_phone: string | null;
-      sales_whatsapp: string | null;
-      seo_title: string | null;
-      seo_description: string | null;
-      iso2: string;
-      name: string;
-    }>`
-      SELECT m.slug, m.currency_code, m.locale, m.sales_email, m.sales_phone, m.sales_whatsapp,
-        m.seo_title, m.seo_description, c.iso2, c.name FROM markets m
-      JOIN countries c ON c.id = m.country_id WHERE m.slug = ${slug} AND m.status = 'active' AND c.is_active`.execute(
-      this.db
-    );
-    const market = result.rows[0];
-    if (!market) throw notFoundError;
-    return {
-      slug: market.slug,
-      currencyCode: market.currency_code,
-      locale: market.locale,
-      salesEmail: market.sales_email,
-      salesPhone: market.sales_phone,
-      salesWhatsapp: market.sales_whatsapp,
-      seoTitle: market.seo_title,
-      seoDescription: market.seo_description,
-      country: { iso2: market.iso2, name: market.name }
-    };
-  }
-
   async listCountries(region?: string) {
     let query = this.db
       .selectFrom('countries')
@@ -261,6 +208,32 @@ export class PublicCatalogService {
       name: row.name,
       phoneCode: row.phone_code,
       region: row.region
+    }));
+  }
+  async listInventoryCountries() {
+    const result = await sql<{
+      id: number;
+      iso2: string;
+      iso3: string;
+      name: string;
+      vehicle_count: number;
+    }>`
+      SELECT c.id, c.iso2, c.iso3, c.name, count(v.id)::int AS vehicle_count
+      FROM countries c JOIN vehicles v ON v.stock_country_id = c.id
+      WHERE c.is_active AND v.status = 'published' AND v.published_at IS NOT NULL
+        AND (v.availability_status = 'available' OR (v.availability_status = 'reserved'
+          AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id
+            AND vr.status = 'active' AND vr.expires_at <= now())
+          AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id
+            AND vr.status = 'active' AND vr.expires_at > now())))
+        AND v.deleted_at IS NULL
+      GROUP BY c.id, c.iso2, c.iso3, c.name ORDER BY c.name`.execute(this.db);
+    return result.rows.map((row) => ({
+      id: row.id,
+      iso2: row.iso2,
+      iso3: row.iso3,
+      name: row.name,
+      vehicleCount: row.vehicle_count
     }));
   }
   async listMakes() {
@@ -298,13 +271,10 @@ export class PublicCatalogService {
   async listPublishedVehicles(filters: VehicleListFilters) {
     const cursor = decodeCursor(filters.cursor, filters.sort);
     const where = [
-      sql`v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL`,
-      sql`EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id = vm.market_id JOIN countries mc ON mc.id = mk.country_id WHERE vm.vehicle_id = v.id AND vm.is_active AND mk.status = 'active' AND mc.is_active AND mk.slug = ${filters.market} AND (vm.available_from IS NULL OR vm.available_from <= now()) AND (vm.available_until IS NULL OR vm.available_until > now()))`
+      sql`v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL`
     ];
     if (filters.featuredOnly) {
-      where.push(
-        sql`EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id=vm.market_id JOIN countries mc ON mc.id=mk.country_id WHERE vm.vehicle_id=v.id AND vm.is_active AND vm.featured AND mk.status='active' AND mc.is_active AND mk.slug=${filters.market} AND (vm.available_from IS NULL OR vm.available_from<=now()) AND (vm.available_until IS NULL OR vm.available_until>now()))`
-      );
+      where.push(sql`v.is_featured`);
     }
     if (filters.q)
       where.push(
@@ -335,7 +305,8 @@ export class PublicCatalogService {
     if (filters.doors !== undefined) where.push(sql`v.doors = ${filters.doors}`);
     if (filters.exteriorColor) where.push(sql`v.exterior_color ILIKE ${filters.exteriorColor}`);
     if (filters.interiorColor) where.push(sql`v.interior_color ILIKE ${filters.interiorColor}`);
-    if (filters.stockCountryId) where.push(sql`v.stock_country_id = ${filters.stockCountryId}`);
+    if (filters.stockCountryIds?.length)
+      where.push(sql`v.stock_country_id IN (${sql.join(filters.stockCountryIds)})`);
     if (filters.featureIds.length)
       where.push(
         sql`v.id IN (SELECT vf.vehicle_id FROM vehicle_features vf WHERE vf.feature_id IN (${sql.join(filters.featureIds)}) GROUP BY vf.vehicle_id HAVING COUNT(DISTINCT vf.feature_id) = ${filters.featureIds.length})`
@@ -347,16 +318,13 @@ export class PublicCatalogService {
         v.mileage_km, v.engine_cc, v.total_seats, v.weight_kg, v.total_weight_kg, v.max_loading_capacity_kg,
         v.length_cm, v.width_cm, v.height_cm, v.notice_type, v.notice_title, v.youtube_video_id,
         v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
-        vehicle_pricing.asking_price_minor::text AS asking_price_minor,
-        vehicle_pricing.available_discount_minor::text AS available_discount_minor,
-        COALESCE(vehicle_pricing.currency_code, selected_market.currency_code) AS currency_code,
+        v.trade_price_minor::text AS asking_price_minor,
+        v.available_discount_minor::text AS available_discount_minor,
+        v.price_currency_code::text AS currency_code,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug,
         bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
       FROM vehicles v JOIN makes m ON m.id = v.make_id JOIN models mo ON mo.id = v.model_id JOIN countries c ON c.id = v.stock_country_id
-      LEFT JOIN markets selected_market ON selected_market.slug = ${filters.market}
-      LEFT JOIN vehicle_markets selected_vehicle_market ON selected_vehicle_market.vehicle_id = v.id AND selected_vehicle_market.market_id = selected_market.id
-      LEFT JOIN vehicle_market_pricing vehicle_pricing ON vehicle_pricing.vehicle_id = selected_vehicle_market.vehicle_id AND vehicle_pricing.market_id = selected_vehicle_market.market_id
       LEFT JOIN body_types bt ON bt.id = v.body_type_id
       LEFT JOIN LATERAL (SELECT id, type, url, thumb_url, sort_order FROM vehicle_media WHERE vehicle_id = v.id ORDER BY is_primary DESC, sort_order, created_at LIMIT 1) media ON TRUE
       WHERE ${sql.join(where, sql` AND `)} ORDER BY ${this.ordering(filters.sort)} LIMIT ${filters.limit + 1}`.execute(
@@ -376,25 +344,21 @@ export class PublicCatalogService {
     };
   }
 
-  async getPublishedVehicle(referenceNo: string, market: string) {
+  async getPublishedVehicle(referenceNo: string) {
     const result = await sql<VehicleRow>`
       SELECT v.id, v.reference_no, v.title, v.description, v.condition::text, v.variant, v.model_code, v.grade, v.year,
         v.manufacture_year, v.manufacture_month, v.registration_year, v.registration_month,
         v.mileage_km, v.engine_cc, v.total_seats, v.weight_kg, v.total_weight_kg, v.max_loading_capacity_kg,
         v.length_cm, v.width_cm, v.height_cm, v.notice_type, v.notice_title, v.youtube_video_id,
         v.fuel::text, v.transmission::text, v.drive::text, v.steering::text, v.seats, v.doors, v.exterior_color, v.interior_color, v.stock_city, v.published_at,
-        vehicle_pricing.asking_price_minor::text AS asking_price_minor,
-        vehicle_pricing.available_discount_minor::text AS available_discount_minor,
-        COALESCE(vehicle_pricing.currency_code, selected_market.currency_code) AS currency_code,
+        v.trade_price_minor::text AS asking_price_minor,
+        v.available_discount_minor::text AS available_discount_minor,
+        v.price_currency_code::text AS currency_code,
         m.id AS make_id, m.name AS make_name, m.slug AS make_slug, m.logo_url AS make_logo_url, mo.id AS model_id, mo.name AS model_name, mo.slug AS model_slug, bt.id AS body_type_id, bt.name AS body_type_name, bt.slug AS body_type_slug, c.id AS stock_country_id, c.iso2 AS stock_country_iso2, c.iso3 AS stock_country_iso3, c.name AS stock_country_name,
         media.id AS media_id, media.type::text AS media_type, media.url AS media_url, media.thumb_url AS media_thumb_url, media.sort_order AS media_sort_order
       FROM vehicles v JOIN makes m ON m.id = v.make_id JOIN models mo ON mo.id = v.model_id JOIN countries c ON c.id = v.stock_country_id LEFT JOIN body_types bt ON bt.id = v.body_type_id
-      LEFT JOIN markets selected_market ON selected_market.slug = ${market}
-      LEFT JOIN vehicle_markets selected_vehicle_market ON selected_vehicle_market.vehicle_id = v.id AND selected_vehicle_market.market_id = selected_market.id
-      LEFT JOIN vehicle_market_pricing vehicle_pricing ON vehicle_pricing.vehicle_id = selected_vehicle_market.vehicle_id AND vehicle_pricing.market_id = selected_vehicle_market.market_id
       LEFT JOIN LATERAL (SELECT id, type, url, thumb_url, sort_order FROM vehicle_media WHERE vehicle_id = v.id ORDER BY is_primary DESC, sort_order, created_at LIMIT 1) media ON TRUE
-      WHERE v.reference_no = ${referenceNo} AND v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL
-        AND EXISTS (SELECT 1 FROM vehicle_markets vm JOIN markets mk ON mk.id = vm.market_id JOIN countries mc ON mc.id = mk.country_id WHERE vm.vehicle_id = v.id AND vm.is_active AND mk.status = 'active' AND mc.is_active AND mk.slug = ${market} AND (vm.available_from IS NULL OR vm.available_from <= now()) AND (vm.available_until IS NULL OR vm.available_until > now()))`.execute(
+      WHERE v.reference_no = ${referenceNo} AND v.status = 'published' AND v.published_at IS NOT NULL AND (v.availability_status = 'available' OR (v.availability_status = 'reserved' AND EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at <= now()) AND NOT EXISTS (SELECT 1 FROM vehicle_reservations vr WHERE vr.vehicle_id = v.id AND vr.status = 'active' AND vr.expires_at > now()))) AND v.deleted_at IS NULL`.execute(
       this.db
     );
     const row = result.rows[0];

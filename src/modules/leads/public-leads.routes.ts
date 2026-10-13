@@ -18,7 +18,6 @@ import { rateLimit } from '../../middleware/rate-limit.middleware.js';
 
 const leadInput = z.strictObject({
   vehicleReferenceNo: z.string().regex(/^GW-\d+$/),
-  marketSlug: z.string().trim().min(1).max(100),
   destinationCountryId: z.number().int().positive().nullable().optional(),
   message: z.string().trim().max(4000).nullable().optional(),
   consentGiven: z.literal(true),
@@ -35,8 +34,8 @@ interface EligibleVehicle {
   model_name: string;
   year: number;
   condition: string;
-  market_id: string;
-  market_slug: string;
+  stock_country_id: number;
+  stock_country_name: string;
 }
 
 export function createPublicLeadsRouter(
@@ -78,15 +77,11 @@ export function createPublicLeadsRouter(
         }
         const eligible = await sql<EligibleVehicle>`
         SELECT v.id, v.reference_no, v.title, mk.name AS make_name, mo.name AS model_name,
-          v.year, v.condition::text, m.id AS market_id, m.slug AS market_slug
+          v.year, v.condition::text, v.stock_country_id, c.name AS stock_country_name
         FROM vehicles v JOIN makes mk ON mk.id = v.make_id JOIN models mo ON mo.id = v.model_id
-        JOIN vehicle_markets vm ON vm.vehicle_id = v.id AND vm.is_active
-        JOIN markets m ON m.id = vm.market_id AND m.status = 'active'
-        JOIN countries c ON c.id = m.country_id AND c.is_active
-        WHERE v.reference_no = ${input.vehicleReferenceNo} AND m.slug = ${input.marketSlug}
+        JOIN countries c ON c.id = v.stock_country_id AND c.is_active
+        WHERE v.reference_no = ${input.vehicleReferenceNo}
           AND v.status = 'published' AND v.availability_status = 'available' AND v.deleted_at IS NULL
-          AND (vm.available_from IS NULL OR vm.available_from <= now())
-          AND (vm.available_until IS NULL OR vm.available_until > now())
         FOR SHARE OF v`.execute(trx);
         const vehicle = eligible.rows[0];
         if (!vehicle) throw notFoundError;
@@ -105,13 +100,14 @@ export function createPublicLeadsRouter(
           model: vehicle.model_name,
           year: vehicle.year,
           condition: vehicle.condition,
-          marketSlug: vehicle.market_slug
+          stockCountryId: vehicle.stock_country_id,
+          stockCountryName: vehicle.stock_country_name
         };
         const created = await trx
           .insertInto('leads')
           .values({
             vehicle_id: vehicle.id,
-            market_id: vehicle.market_id,
+            stock_country_id: vehicle.stock_country_id,
             vehicle_snapshot: snapshot,
             customer_id: customerId,
             contact_name: customer.fullName,

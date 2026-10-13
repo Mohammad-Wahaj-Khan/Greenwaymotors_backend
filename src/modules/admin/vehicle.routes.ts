@@ -106,6 +106,8 @@ const vehicleInput = z.strictObject({
   noticeType: z.enum(['promotion', 'caution']).nullable().optional(),
   noticeTitle: nullableText(200).optional(),
   youtubeVideoId: youtubeVideoIdInput,
+  isFeatured: z.boolean().optional(),
+  featurePriority: z.number().int().min(0).max(10000).optional(),
   stockCity: nullableText(100).optional(),
   description: nullableText(10000).optional()
 });
@@ -124,7 +126,7 @@ const costingInput = z
     (value) => (value.purchaseCostMinor === null) === (value.purchaseCostCurrency === null),
     'Purchase cost and currency must both be present or both null.'
   );
-const vehicleMarketPricingInput = z
+const vehiclePricingInput = z
   .strictObject({
     askingPriceMinor: amount.nullable(),
     minimumSalePriceMinor: amount.nullable(),
@@ -148,30 +150,6 @@ const vehicleMarketPricingInput = z
         BigInt(value.availableDiscountMinor) <= BigInt(value.askingPriceMinor)),
     'Available discount requires an asking price and cannot exceed it.'
   );
-const eligibilityInput = z.strictObject({
-  markets: z
-    .array(
-      z
-        .strictObject({
-          marketId: z.uuid(),
-          isActive: z.boolean(),
-          featured: z.boolean().default(false),
-          priority: z.number().int().min(0).max(10000).default(0),
-          availableFrom: z.iso.datetime().nullable().optional(),
-          availableUntil: z.iso.datetime().nullable().optional(),
-          marketNotes: nullableText(1000).optional()
-        })
-        .refine(
-          (value) =>
-            !value.availableFrom ||
-            !value.availableUntil ||
-            value.availableUntil > value.availableFrom,
-          'availableUntil must follow availableFrom.'
-        )
-    )
-    .max(100)
-});
-
 function vehicleValues(input: {
   [K in keyof z.output<typeof vehicleInput>]?: z.output<typeof vehicleInput>[K] | undefined;
 }) {
@@ -217,6 +195,8 @@ function vehicleValues(input: {
     ...(input.noticeType !== undefined && { notice_type: input.noticeType }),
     ...(input.noticeTitle !== undefined && { notice_title: input.noticeTitle }),
     ...(input.youtubeVideoId !== undefined && { youtube_video_id: input.youtubeVideoId }),
+    ...(input.isFeatured !== undefined && { is_featured: input.isFeatured }),
+    ...(input.featurePriority !== undefined && { feature_priority: input.featurePriority }),
     ...(input.stockCity !== undefined && { stock_city: input.stockCity }),
     ...(input.description !== undefined && { description: input.description })
   };
@@ -263,6 +243,8 @@ function toAdminVehicle(row: Selectable<Vehicles>, canReadSource: boolean) {
     noticeType: row.notice_type,
     noticeTitle: row.notice_title,
     youtubeVideoId: row.youtube_video_id,
+    isFeatured: row.is_featured,
+    featurePriority: row.feature_priority,
     stockCountryId: row.stock_country_id,
     stockCity: row.stock_city,
     ...(canReadSource
@@ -511,16 +493,6 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
             !['available', 'unavailable'].includes(current.availability_status)
           )
             throw conflictError('Vehicle cannot be marked sold.');
-          if (command.name === 'publish') {
-            const mapping = await trx
-              .selectFrom('vehicle_markets')
-              .select('market_id')
-              .where('vehicle_id', '=', id)
-              .where('is_active', '=', true)
-              .executeTakeFirst();
-            if (!mapping)
-              throw conflictError('Configure an active vehicle-market mapping before publication.');
-          }
           if (command.name === 'mark-available' || command.name === 'mark-sold') {
             const hold = await trx
               .selectFrom('vehicle_reservations')
@@ -605,181 +577,47 @@ export function createVehicleRouter(db: Kysely<DB>): Router {
       .execute();
     sendData(res, rows);
   });
-  router.get('/vehicles/:id/markets', requirePermission('vehicle.read_all'), async (req, res) => {
-    const id = parseUuid(req.params.id);
-    await ensureVehicle(db, id);
-    const rows = await db
-      .selectFrom('vehicle_markets')
-      .selectAll()
-      .where('vehicle_id', '=', id)
-      .execute();
-    sendData(
-      res,
-      rows.map((row) => ({
-        marketId: row.market_id,
-        isActive: row.is_active,
-        featured: row.featured,
-        priority: row.priority,
-        availableFrom: row.available_from,
-        availableUntil: row.available_until,
-        marketNotes: row.market_notes
-      }))
-    );
+  router.get('/vehicles/:id/pricing', requirePermission('vehicle.pricing.floor.read'), async (req, res) => {
+    const row = await ensureVehicle(db, parseUuid(req.params.id));
+    sendData(res, {
+      vehicleId: row.id,
+      currencyCode: row.price_currency_code,
+      askingPriceMinor: row.trade_price_minor === null ? null : String(row.trade_price_minor),
+      availableDiscountMinor:
+        row.available_discount_minor === null ? null : String(row.available_discount_minor),
+      minimumSalePriceMinor:
+        row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor)
+    });
   });
-  router.put(
-    '/vehicles/:id/markets',
-    requirePermission('vehicle_market.manage'),
-    async (req, res) => {
-      const input = parseInput(eligibilityInput, req.body);
-      if (new Set(input.markets.map((item) => item.marketId)).size !== input.markets.length)
-        throw validationError('Duplicate marketId.');
-      const id = parseUuid(req.params.id);
-      await db.transaction().execute(async (trx) => {
-        const vehicle = await trx
-          .selectFrom('vehicles')
-          .select('id')
-          .where('id', '=', id)
-          .where('deleted_at', 'is', null)
-          .forUpdate()
-          .executeTakeFirst();
-        if (!vehicle) throw notFoundError;
-        if (input.markets.length) {
-          const found = await trx
-            .selectFrom('markets')
-            .select('id')
-            .where(
-              'id',
-              'in',
-              input.markets.map((item) => item.marketId)
-            )
-            .execute();
-          if (found.length !== input.markets.length)
-            throw validationError('One or more marketIds are invalid.');
-        }
-        await trx.deleteFrom('vehicle_markets').where('vehicle_id', '=', id).execute();
-        if (input.markets.length)
-          await trx
-            .insertInto('vehicle_markets')
-            .values(
-              input.markets.map((item) => ({
-                vehicle_id: id,
-                market_id: item.marketId,
-                is_active: item.isActive,
-                featured: item.featured,
-                priority: item.priority,
-                available_from: item.availableFrom ? new Date(item.availableFrom) : null,
-                available_until: item.availableUntil ? new Date(item.availableUntil) : null,
-                market_notes: item.marketNotes ?? null,
-                created_by: req.auth!.user.id
-              }))
-            )
-            .execute();
-        await audit(trx, req.auth!.user.id, 'vehicle.markets.replace', 'vehicle', id, {
-          count: input.markets.length
-        });
+  router.put('/vehicles/:id/pricing', requirePermission('vehicle.pricing.manage'), async (req, res) => {
+    const input = parseInput(vehiclePricingInput, req.body);
+    const id = parseUuid(req.params.id);
+    const row = await db.transaction().execute(async (trx) => {
+      const updated = await trx.updateTable('vehicles').set({
+        trade_price_minor: input.askingPriceMinor,
+        available_discount_minor: input.availableDiscountMinor ?? null,
+        minimum_sale_price_minor: input.minimumSalePriceMinor,
+        price_currency_code: 'USD'
+      }).where('id', '=', id).where('deleted_at', 'is', null).returningAll().executeTakeFirst();
+      if (!updated) throw notFoundError;
+      await audit(trx, req.auth!.user.id, 'vehicle.pricing.update', 'vehicle', id, {
+        currencyCode: 'USD',
+        askingPriceSet: updated.trade_price_minor !== null,
+        availableDiscountSet: updated.available_discount_minor !== null,
+        minimumSalePriceSet: updated.minimum_sale_price_minor !== null
       });
-      sendData(res, { markets: input.markets });
-    }
-  );
-  router.get(
-    '/vehicles/:id/markets/:marketId/pricing',
-    requirePermission('vehicle.pricing.floor.read'),
-    async (req, res) => {
-      const vehicleId = parseUuid(req.params.id);
-      const marketId = parseUuid(req.params.marketId);
-      const row = await db
-        .selectFrom('vehicle_markets')
-        .innerJoin('markets', 'markets.id', 'vehicle_markets.market_id')
-        .leftJoin('vehicle_market_pricing', (join) =>
-          join
-            .onRef('vehicle_market_pricing.vehicle_id', '=', 'vehicle_markets.vehicle_id')
-            .onRef('vehicle_market_pricing.market_id', '=', 'vehicle_markets.market_id')
-        )
-        .select([
-          'markets.currency_code as market_currency_code',
-          'vehicle_market_pricing.currency_code as price_currency_code',
-          'vehicle_market_pricing.asking_price_minor',
-          'vehicle_market_pricing.minimum_sale_price_minor',
-          'vehicle_market_pricing.available_discount_minor'
-        ])
-        .where('vehicle_markets.vehicle_id', '=', vehicleId)
-        .where('vehicle_markets.market_id', '=', marketId)
-        .executeTakeFirst();
-      if (!row) throw notFoundError;
-      sendData(res, {
-        vehicleId,
-        marketId,
-        currencyCode: row.price_currency_code ?? row.market_currency_code,
-        marketCurrencyCode: row.market_currency_code,
-        askingPriceMinor: row.asking_price_minor === null ? null : String(row.asking_price_minor),
-        minimumSalePriceMinor:
-          row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor),
-        availableDiscountMinor:
-          row.available_discount_minor === null ? null : String(row.available_discount_minor)
-      });
-    }
-  );
-  router.put(
-    '/vehicles/:id/markets/:marketId/pricing',
-    requirePermission('vehicle.pricing.manage'),
-    async (req, res) => {
-      const input = parseInput(vehicleMarketPricingInput, req.body);
-      const vehicleId = parseUuid(req.params.id);
-      const marketId = parseUuid(req.params.marketId);
-      const result = await db.transaction().execute(async (trx) => {
-        const eligible = await trx
-          .selectFrom('vehicle_markets')
-          .innerJoin('markets', 'markets.id', 'vehicle_markets.market_id')
-          .select(['markets.currency_code'])
-          .where('vehicle_markets.vehicle_id', '=', vehicleId)
-          .where('vehicle_markets.market_id', '=', marketId)
-          .forUpdate()
-          .executeTakeFirst();
-        if (!eligible) throw notFoundError;
-        const row = await trx
-          .insertInto('vehicle_market_pricing')
-          .values({
-            vehicle_id: vehicleId,
-            market_id: marketId,
-            currency_code: eligible.currency_code,
-            asking_price_minor: input.askingPriceMinor,
-            minimum_sale_price_minor: input.minimumSalePriceMinor,
-            available_discount_minor: input.availableDiscountMinor ?? null,
-            updated_by: req.auth!.user.id
-          })
-          .onConflict((conflict) =>
-            conflict.columns(['vehicle_id', 'market_id']).doUpdateSet({
-              currency_code: eligible.currency_code,
-              asking_price_minor: input.askingPriceMinor,
-              minimum_sale_price_minor: input.minimumSalePriceMinor,
-              available_discount_minor: input.availableDiscountMinor ?? null,
-              updated_by: req.auth!.user.id,
-              updated_at: new Date()
-            })
-          )
-          .returningAll()
-          .executeTakeFirstOrThrow();
-        await audit(trx, req.auth!.user.id, 'vehicle.market_pricing.update', 'vehicle', vehicleId, {
-          marketId,
-          currencyCode: row.currency_code,
-          askingPriceSet: row.asking_price_minor !== null,
-          minimumSalePriceSet: row.minimum_sale_price_minor !== null
-        });
-        return row;
-      });
-      sendData(res, {
-        vehicleId,
-        marketId,
-        currencyCode: result.currency_code,
-        askingPriceMinor:
-          result.asking_price_minor === null ? null : String(result.asking_price_minor),
-        minimumSalePriceMinor:
-          result.minimum_sale_price_minor === null ? null : String(result.minimum_sale_price_minor),
-        availableDiscountMinor:
-          result.available_discount_minor === null ? null : String(result.available_discount_minor)
-      });
-    }
-  );
+      return updated;
+    });
+    sendData(res, {
+      vehicleId: row.id,
+      currencyCode: row.price_currency_code,
+      askingPriceMinor: row.trade_price_minor === null ? null : String(row.trade_price_minor),
+      availableDiscountMinor:
+        row.available_discount_minor === null ? null : String(row.available_discount_minor),
+      minimumSalePriceMinor:
+        row.minimum_sale_price_minor === null ? null : String(row.minimum_sale_price_minor)
+    });
+  });
   router.get('/vehicles/:id/costing', requirePermission('vehicle.cost.read'), async (req, res) => {
     const row = await ensureVehicle(db, parseUuid(req.params.id));
     sendData(res, {

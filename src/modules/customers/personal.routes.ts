@@ -14,7 +14,7 @@ export const salespersonRatingSchema = z
   .strict();
 const filtersSchema = z
   .object({
-    market: z.string().trim().min(1).max(100),
+    stockCountryIds: z.array(z.number().int().positive()).max(100).optional(),
     q: z.string().trim().max(100).optional(),
     makeId: z.number().int().positive().optional(),
     modelId: z.number().int().positive().optional(),
@@ -62,14 +62,11 @@ export function createMeRouter(db: Kysely<DB>): Router {
       year: number;
       created_at: Date;
     }>`
-   SELECT f.vehicle_id,v.reference_no,v.title,mk.name AS make,mo.name AS model,v.year,f.created_at
+   SELECT f.vehicle_id,v.reference_no,v.title,mk.name AS make,mo.name AS model,v.year,
+     v.stock_country_id,f.created_at
    FROM favorites f JOIN vehicles v ON v.id=f.vehicle_id JOIN makes mk ON mk.id=v.make_id
    JOIN models mo ON mo.id=v.model_id WHERE f.user_id=${req.auth!.user.id}
     AND v.status='published' AND v.availability_status='available' AND v.deleted_at IS NULL
-    AND EXISTS(SELECT 1 FROM vehicle_markets vm JOIN markets m ON m.id=vm.market_id
-     WHERE vm.vehicle_id=v.id AND vm.is_active AND m.status='active'
-     AND (vm.available_from IS NULL OR vm.available_from<=now())
-     AND (vm.available_until IS NULL OR vm.available_until>now()))
    ORDER BY f.created_at DESC,f.vehicle_id DESC LIMIT ${p.limit} OFFSET ${p.offset}
   `.execute(db);
     sendData(res, rows.rows);
@@ -80,10 +77,6 @@ export function createMeRouter(db: Kysely<DB>): Router {
    INSERT INTO favorites(user_id,vehicle_id)
    SELECT ${req.auth!.user.id},v.id FROM vehicles v
    WHERE v.id=${id} AND v.status='published' AND v.availability_status='available' AND v.deleted_at IS NULL
-    AND EXISTS(SELECT 1 FROM vehicle_markets vm JOIN markets m ON m.id=vm.market_id
-     WHERE vm.vehicle_id=v.id AND vm.is_active AND m.status='active'
-     AND (vm.available_from IS NULL OR vm.available_from<=now())
-     AND (vm.available_until IS NULL OR vm.available_until>now()))
    ON CONFLICT(user_id,vehicle_id) DO UPDATE SET user_id=EXCLUDED.user_id RETURNING vehicle_id
   `.execute(db);
     if (!rows.rows[0]) throw notFoundError;

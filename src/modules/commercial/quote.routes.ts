@@ -156,7 +156,7 @@ async function lockQuote(trx: Kysely<DB>, ref: string) {
   if (!initial) throw notFoundError;
   const lead = await trx
     .selectFrom('leads')
-    .select(['assigned_to', 'status as lead_status', 'market_id as lead_market_id'])
+    .select(['assigned_to', 'status as lead_status', 'stock_country_id'])
     .where('id', '=', initial.lead_id)
     .forUpdate()
     .executeTakeFirst();
@@ -376,26 +376,6 @@ export async function convertAcceptedQuote(
     lead.status === 'spam'
   )
     throw conflictError('Lead is closed and cannot be converted.');
-  if (
-    !lead.market_id ||
-    !(await trx
-      .selectFrom('markets')
-      .select('id')
-      .where('id', '=', lead.market_id)
-      .where('status', '=', 'active')
-      .executeTakeFirst())
-  )
-    throw conflictError('Lead destination market is inactive.');
-  if (
-    !(await trx
-      .selectFrom('vehicle_markets')
-      .select('vehicle_id')
-      .where('vehicle_id', '=', vehicle.id)
-      .where('market_id', '=', lead.market_id)
-      .where('is_active', '=', true)
-      .executeTakeFirst())
-  )
-    throw conflictError('Vehicle is no longer eligible for the lead market.');
   if (vehicle.status !== 'published' || vehicle.deleted_at)
     throw conflictError('Vehicle is no longer published.');
   await expireActiveReservations(trx, vehicle.id);
@@ -427,13 +407,6 @@ export async function convertAcceptedQuote(
       .executeTakeFirstOrThrow();
     reservationId = reservation.id;
   }
-  const market = lead.market_id
-    ? await trx
-        .selectFrom('markets')
-        .selectAll()
-        .where('id', '=', lead.market_id)
-        .executeTakeFirst()
-    : undefined;
   const source = vehicle.inventory_source_id
     ? await trx
         .selectFrom('inventory_sources')
@@ -455,7 +428,7 @@ export async function convertAcceptedQuote(
       vehicle_id: vehicle.id,
       reservation_id: reservationId,
       customer_id: lead.customer_id,
-      market_id: lead.market_id,
+      stock_country_id: lead.stock_country_id ?? vehicle.stock_country_id,
       owner_salesperson_id: lead.assigned_to ?? actorId,
       status: 'source_confirming',
       agreed_amount_minor: version.customer_total_minor,
@@ -469,9 +442,6 @@ export async function convertAcceptedQuote(
         email: lead.contact_email,
         phone: lead.contact_phone
       },
-      market_snapshot: market
-        ? { slug: market.slug, currency: market.currency_code, locale: market.locale }
-        : null,
       salesperson_snapshot: salesperson
         ? { id: salesperson.id, name: salesperson.full_name, email: salesperson.email }
         : null,
@@ -544,7 +514,6 @@ export function dealDto(row: Selectable<Deals>, includeCost = false) {
     status: row.status,
     amountMinor: String(row.agreed_amount_minor),
     currency: row.currency_code,
-    marketId: row.market_id,
     ownerSalespersonId: row.owner_salesperson_id,
     ...(includeCost
       ? {
@@ -628,12 +597,9 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
   });
   router.post('/leads/:referenceNo/quotes', permits('quote.create'), async (req, res) => {
     const ref = parseInput(z.string().regex(/^LEAD-\d+$/), req.params.referenceNo);
-    const body = parseInput(
+    parseInput(
       z.strictObject({
-        currency: z
-          .string()
-          .regex(/^[A-Z]{3}$/)
-          .optional()
+        currency: z.literal('USD').optional()
       }),
       req.body
     );
@@ -646,10 +612,7 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
         .executeTakeFirst();
       if (!lead) throw notFoundError;
       demandLeadUpdate(req, lead);
-      if (
-        !lead.market_id ||
-        !['qualified', 'quote_preparing', 'quote_sent', 'negotiating'].includes(lead.status)
-      )
+      if (!['qualified', 'quote_preparing', 'quote_sent', 'negotiating'].includes(lead.status))
         throw conflictError('Lead must be qualified before quote preparation.');
       const vehicle = await trx
         .selectFrom('vehicles')
@@ -663,6 +626,7 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
           'model_id',
           'inventory_source_id',
           'purchase_cost_currency',
+          'minimum_sale_price_minor',
           'status',
           'deleted_at'
         ])
@@ -672,37 +636,16 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
         throw conflictError('Lead vehicle is not available.');
       if (vehicle.status !== 'published' || vehicle.deleted_at)
         throw conflictError('Only published vehicles can be quoted.');
-      if (
-        !(await trx
-          .selectFrom('vehicle_markets')
-          .select('vehicle_id')
-          .where('vehicle_id', '=', vehicle.id)
-          .where('market_id', '=', lead.market_id)
-          .where('is_active', '=', true)
-          .executeTakeFirst())
-      )
-        throw conflictError('Vehicle is not eligible for the lead market.');
-      const market = await trx
-        .selectFrom('markets')
-        .select('currency_code')
-        .where('id', '=', lead.market_id)
-        .where('status', '=', 'active')
-        .executeTakeFirst();
-      if (!market) throw conflictError('Lead destination market is inactive.');
-      if (body.currency && body.currency !== market.currency_code)
+      if (vehicle.purchase_cost_currency && vehicle.purchase_cost_currency !== 'USD')
         throw conflictError(
-          'Quotes must use the active market currency; currency conversion is not configured.'
-        );
-      if (vehicle.purchase_cost_currency && vehicle.purchase_cost_currency !== market.currency_code)
-        throw conflictError(
-          'Vehicle source cost currency must match the active market currency; currency conversion is not configured.'
+          'Vehicle source cost must use USD; currency conversion is not configured.'
         );
       const quote = await trx
         .insertInto('quotes')
         .values({
           lead_id: lead.id,
           vehicle_id: lead.vehicle_id,
-          currency_code: body.currency ?? market.currency_code,
+          currency_code: 'USD',
           created_by: req.auth!.user.id
         })
         .returningAll()
@@ -817,6 +760,7 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
           'inventory_source_id',
           'purchase_cost_minor',
           'purchase_cost_currency',
+          'minimum_sale_price_minor',
           'estimated_local_cost_minor',
           'availability_status',
           'status',
@@ -834,17 +778,6 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
         );
       if (vehicle.status !== 'published' || vehicle.deleted_at)
         throw conflictError('Only published vehicles can be quoted.');
-      if (
-        !quote.lead_market_id ||
-        !(await trx
-          .selectFrom('vehicle_markets')
-          .select('vehicle_id')
-          .where('vehicle_id', '=', vehicle.id)
-          .where('market_id', '=', quote.lead_market_id)
-          .where('is_active', '=', true)
-          .executeTakeFirst())
-      )
-        throw conflictError('Vehicle is not eligible for the lead market.');
       const sourceCost = money(vehicle.purchase_cost_minor),
         logistics = money(vehicle.estimated_local_cost_minor),
         other = BigInt(input.otherInternalCostMinor);
@@ -856,23 +789,9 @@ export function createQuoteRouter(db: Kysely<DB>): Router {
       const customerTotal = internal + markup + customerCharges;
       if (customerTotal < 0n)
         throw validationError('Calculated customer total cannot be negative.');
-      const marketPricing = quote.lead_market_id
-        ? await trx
-            .selectFrom('vehicle_market_pricing')
-            .select(['currency_code', 'minimum_sale_price_minor'])
-            .where('vehicle_id', '=', vehicle.id)
-            .where('market_id', '=', quote.lead_market_id)
-            .forUpdate()
-            .executeTakeFirst()
-        : undefined;
-      if (marketPricing && marketPricing.currency_code !== quote.currency_code)
-        throw conflictError(
-          'Vehicle market price currency does not match the quote currency. Update vehicle pricing before quoting.'
-        );
       if (
-        marketPricing?.minimum_sale_price_minor !== null &&
-        marketPricing?.minimum_sale_price_minor !== undefined &&
-        customerTotal < BigInt(marketPricing.minimum_sale_price_minor)
+        vehicle.minimum_sale_price_minor !== null &&
+        customerTotal < BigInt(vehicle.minimum_sale_price_minor)
       )
         throw conflictError('Quote total cannot be lower than the configured minimum sale price.');
       const margin = customerTotal - internal;

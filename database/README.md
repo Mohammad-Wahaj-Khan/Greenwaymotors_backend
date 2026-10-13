@@ -1,6 +1,6 @@
 # Database folder
 
-The ordered files in `migrations/` are the schema source of truth. `001_initial_schema.sql` contains the original single-seller baseline; `002_single_seller_model.sql` safely converts older dealer schemas; `003_global_sales_foundation.sql` adds destination markets, costing, quotes, reservations and deals; `004_sales_integrity.sql` ensures linked commercial records refer to the same lead and exact vehicle; and `005_quote_history_guard.sql` protects authoritative quote line items. No vehicle is market-visible until staff explicitly enables a market mapping.
+The ordered files in `migrations/` are the schema source of truth. `001_initial_schema.sql` contains the original single-seller baseline; `002_single_seller_model.sql` safely converts older dealer schemas; `003_global_sales_foundation.sql` adds the original destination-market model, costing, quotes, reservations and deals; `004_sales_integrity.sql` ensures linked commercial records refer to the same lead and exact vehicle; `005_quote_history_guard.sql` protects authoritative quote line items; and `015_stock_country_inventory.sql` retires market workflows in favor of each vehicle's stock country and a single USD price. That migration preserves legacy market/pricing/context rows in `legacy_*` tables, and flags prices that need manual review in `vehicle_price_migration_review` rather than guessing a USD conversion.
 
 The ordered files in `seeds/` contain the staff permission matrix. Review the matrix before production deployment.
 

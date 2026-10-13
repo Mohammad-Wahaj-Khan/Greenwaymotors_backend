@@ -37,7 +37,6 @@ export type LeadActivityType = "assigned" | "call" | "created" | "email" | "note
 
 export type LeadStatus = "cancelled" | "completed" | "contacted" | "lost" | "negotiating" | "new" | "qualified" | "quote_preparing" | "quote_sent" | "spam" | "unresponsive" | "won";
 
-export type MarketStatus = "active" | "inactive";
 
 export type MediaType = "image" | "video";
 
@@ -105,10 +104,6 @@ export interface CmsEntries {
   updated_at: Generated<Timestamp>;
 }
 
-export interface CmsEntryMarkets {
-  entry_id: string;
-  market_id: string;
-}
 
 export interface CommercialIdempotency {
   created_at: Generated<Timestamp>;
@@ -144,8 +139,7 @@ export interface Deals {
   internal_notes: string | null;
   lead_id: string;
   margin_minor: Int8 | null;
-  market_id: string;
-  market_snapshot: Json | null;
+  stock_country_id: number;
   owner_salesperson_id: string;
   reference_no: Generated<string>;
   reservation_id: string | null;
@@ -276,7 +270,7 @@ export interface Leads {
   landing_page: string | null;
   lost_reason: string | null;
   lost_reason_code: string | null;
-  market_id: string | null;
+  stock_country_id: number | null;
   marketing_consent: Generated<boolean>;
   message: string | null;
   possible_duplicate_of: string | null;
@@ -303,22 +297,6 @@ export interface Makes {
   logo_url: string | null;
   name: string;
   slug: string;
-}
-
-export interface Markets {
-  country_id: number;
-  created_at: Generated<Timestamp>;
-  currency_code: string;
-  id: Generated<string>;
-  locale: string;
-  sales_email: string | null;
-  sales_phone: string | null;
-  sales_whatsapp: string | null;
-  seo_description: string | null;
-  seo_title: string | null;
-  slug: string;
-  status: Generated<MarketStatus>;
-  updated_at: Generated<Timestamp>;
 }
 
 export interface MfaChallenges {
@@ -573,31 +551,6 @@ export interface VehicleImportRows {
   vehicle_id: string | null;
 }
 
-export interface VehicleMarkets {
-  available_from: Timestamp | null;
-  available_until: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  created_by: string | null;
-  featured: Generated<boolean>;
-  is_active: Generated<boolean>;
-  market_id: string;
-  market_notes: string | null;
-  priority: Generated<number>;
-  updated_at: Generated<Timestamp>;
-  vehicle_id: string;
-}
-
-export interface VehicleMarketPricing {
-  asking_price_minor: Int8 | null;
-  available_discount_minor: Int8 | null;
-  currency_code: string;
-  market_id: string;
-  minimum_sale_price_minor: Int8 | null;
-  updated_at: Generated<Timestamp>;
-  updated_by: string | null;
-  vehicle_id: string;
-}
-
 export interface VehicleMedia {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -626,6 +579,7 @@ export interface VehicleReservations {
 }
 
 export interface Vehicles {
+  available_discount_minor: Int8 | null;
   availability_status: Generated<VehicleAvailabilityStatus>;
   body_type_id: number | null;
   condition: Generated<VehicleCondition>;
@@ -646,20 +600,24 @@ export interface Vehicles {
   height_cm: number | null;
   id: Generated<string>;
   interior_color: string | null;
+  is_featured: Generated<boolean>;
   inventory_source_id: string | null;
   length_cm: number | null;
   make_id: number;
+  feature_priority: Generated<number>;
   manufacture_month: number | null;
   manufacture_year: number | null;
   max_loading_capacity_kg: number | null;
   mileage_km: number | null;
   model_code: string | null;
   model_id: number;
+  minimum_sale_price_minor: Int8 | null;
   notice_title: string | null;
   notice_type: string | null;
   published_at: Timestamp | null;
   purchase_cost_currency: string | null;
   purchase_cost_minor: Int8 | null;
+  price_currency_code: Generated<string>;
   reference_no: Generated<string>;
   registration_month: number | null;
   registration_year: number | null;
@@ -677,6 +635,7 @@ export interface Vehicles {
   stock_country_id: number;
   stock_number: string | null;
   title: string;
+  trade_price_minor: Int8 | null;
   transmission: TransmissionType | null;
   updated_at: Generated<Timestamp>;
   variant: string | null;
@@ -692,7 +651,6 @@ export interface DB {
   audit_logs: AuditLogs;
   body_types: BodyTypes;
   cms_entries: CmsEntries;
-  cms_entry_markets: CmsEntryMarkets;
   commercial_idempotency: CommercialIdempotency;
   countries: Countries;
   deals: Deals;
@@ -706,7 +664,6 @@ export interface DB {
   lead_idempotency: LeadIdempotency;
   leads: Leads;
   makes: Makes;
-  markets: Markets;
   mfa_challenges: MfaChallenges;
   mfa_recovery_codes: MfaRecoveryCodes;
   models: Models;
@@ -732,8 +689,6 @@ export interface DB {
   vehicle_features: VehicleFeatures;
   vehicle_import_jobs: VehicleImportJobs;
   vehicle_import_rows: VehicleImportRows;
-  vehicle_markets: VehicleMarkets;
-  vehicle_market_pricing: VehicleMarketPricing;
   vehicle_media: VehicleMedia;
   vehicle_reservations: VehicleReservations;
   vehicles: Vehicles;

@@ -8,14 +8,12 @@ servers:
     description: Local development
 tags:
   - name: Health
-  - name: Markets
   - name: Catalog
   - name: Vehicles
   - name: Auth
   - name: Uploads
   - name: Admin - Inventory Sources
   - name: Admin - Vehicles
-  - name: Admin - Markets
   - name: Admin - Costing
   - name: Admin - Pricing
   - name: Sales - Leads
@@ -57,35 +55,20 @@ paths:
   /api/v1/countries:
     get:
       tags:
-        - Markets
+        - Countries
       operationId: listCountries
       responses:
         '200':
           description: Active countries.
-  /api/v1/markets:
+  /api/v1/inventory/countries:
     get:
       tags:
-        - Markets
-      operationId: listMarkets
+        - Vehicles
+      operationId: listInventoryCountries
+      summary: List countries that currently have public inventory
       responses:
         '200':
-          description: Active destination markets and countries.
-  /api/v1/markets/{marketSlug}:
-    get:
-      tags:
-        - Markets
-      operationId: getMarket
-      parameters:
-        - name: marketSlug
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Active destination market metadata.
-        '404':
-          $ref: '#/components/responses/Problem'
+          $ref: '#/components/responses/Data'
   /api/v1/catalog/makes:
     get:
       tags:
@@ -147,12 +130,6 @@ paths:
         - Vehicles
       operationId: listPublishedVehicles
       parameters:
-        - name: market
-          in: query
-          required: true
-          description: Active destination market slug.
-          schema:
-            type: string
         - name: limit
           in: query
           schema:
@@ -231,6 +208,11 @@ paths:
           in: query
           schema:
             type: integer
+        - name: stockCountryIds
+          in: query
+          description: Comma-separated or repeated stock-country IDs; omitted means all countries.
+          schema:
+            type: string
         - name: featureIds
           in: query
           description: Comma-separated feature IDs.
@@ -258,12 +240,6 @@ paths:
         - Vehicles
       operationId: getPublishedVehicle
       parameters:
-        - name: market
-          in: query
-          required: true
-          description: Active destination market slug.
-          schema:
-            type: string
         - name: referenceNo
           in: path
           required: true
@@ -806,89 +782,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Data'
-  /api/v1/admin/markets:
-    get:
-      tags:
-        - Admin - Markets
-      operationId: adminListMarkets
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
-      responses:
-        '200':
-          $ref: '#/components/responses/Page'
-    post:
-      tags:
-        - Admin - Markets
-      operationId: adminCreateMarket
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MarketInput'
-      responses:
-        '201':
-          $ref: '#/components/responses/Data'
-        '422':
-          $ref: '#/components/responses/Problem'
-  /api/v1/admin/markets/{id}:
-    parameters:
-      - $ref: '#/components/parameters/UuidId'
-    get:
-      tags:
-        - Admin - Markets
-      operationId: adminGetMarket
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-    patch:
-      tags:
-        - Admin - Markets
-      operationId: adminUpdateMarket
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MarketPatch'
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-        '422':
-          $ref: '#/components/responses/Problem'
-  /api/v1/admin/markets/{id}/activate:
-    parameters:
-      - $ref: '#/components/parameters/UuidId'
-    post:
-      tags:
-        - Admin - Markets
-      operationId: adminActivateMarket
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-  /api/v1/admin/markets/{id}/deactivate:
-    parameters:
-      - $ref: '#/components/parameters/UuidId'
-    post:
-      tags:
-        - Admin - Markets
-      operationId: adminDeactivateMarket
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
   /api/v1/admin/vehicles:
     get:
       tags:
@@ -1061,6 +954,35 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Data'
+  /api/v1/admin/vehicles/{id}/pricing:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    get:
+      tags:
+        - Admin - Pricing
+      operationId: adminGetVehiclePricing
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+    put:
+      tags:
+        - Admin - Pricing
+      operationId: adminUpdateVehiclePricing
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehiclePricingInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+        '422':
+          $ref: '#/components/responses/Problem'
   /api/v1/admin/vehicles/{id}/features:
     parameters:
       - $ref: '#/components/parameters/UuidId'
@@ -1088,80 +1010,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Data'
-        '422':
-          $ref: '#/components/responses/Problem'
-  /api/v1/admin/vehicles/{id}/markets:
-    parameters:
-      - $ref: '#/components/parameters/UuidId'
-    get:
-      tags:
-        - Admin - Markets
-      operationId: adminGetVehicleMarkets
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-    put:
-      tags:
-        - Admin - Markets
-      operationId: adminReplaceVehicleMarkets
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VehicleMarketsInput'
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-        '422':
-          $ref: '#/components/responses/Problem'
-  /api/v1/admin/vehicles/{id}/markets/{marketId}/pricing:
-    parameters:
-      - $ref: '#/components/parameters/UuidId'
-      - name: marketId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      tags:
-        - Admin - Pricing
-      operationId: adminGetVehicleMarketPricing
-      description: Returns the customer asking price and salesperson-only minimum sale price for an assigned market.
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-    put:
-      tags:
-        - Admin - Pricing
-      operationId: adminReplaceVehicleMarketPricing
-      description: Sets the market-specific customer asking price and internal minimum sale price. The minimum is never included in public vehicle responses and is enforced when sales staff create quote versions.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VehicleMarketPricingInput'
-      responses:
-        '200':
-          $ref: '#/components/responses/Data'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
   /api/v1/admin/vehicles/{id}/costing:
@@ -1436,11 +1284,11 @@ paths:
           in: query
           schema:
             type: boolean
-        - name: marketId
+        - name: stockCountryId
           in: query
           schema:
-            type: string
-            format: uuid
+            type: integer
+            minimum: 1
         - name: destinationCountryId
           in: query
           schema:
@@ -2535,11 +2383,6 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       parameters:
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
         - name: limit
           in: query
           required: false
@@ -2573,11 +2416,6 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       parameters:
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
         - name: limit
           in: query
           required: false
@@ -2614,11 +2452,6 @@ paths:
         - name: referenceNo
           in: path
           required: true
-          schema:
-            type: string
-        - name: market
-          in: query
-          required: false
           schema:
             type: string
         - name: limit
@@ -2989,11 +2822,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3049,11 +2883,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3109,11 +2944,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3169,11 +3005,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3229,11 +3066,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3289,11 +3127,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3349,11 +3188,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3409,11 +3249,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3469,11 +3310,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3509,12 +3351,12 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
-  /api/v1/admin/reports/markets:
+  /api/v1/admin/reports/countries:
     get:
       tags:
         - Admin - Reports
-      operationId: getApiV1AdminReportsMarkets
-      summary: Generate markets report
+      operationId: getApiV1AdminReportsCountries
+      summary: Generate stock-country report
       description:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
@@ -3529,11 +3371,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3589,11 +3432,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3649,11 +3493,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3709,11 +3554,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: marketId
+        - name: stockCountryId
           in: query
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
         - name: salespersonId
           in: query
           required: false
@@ -3764,11 +3610,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
         - name: limit
           in: query
           required: false
@@ -3802,11 +3643,6 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       parameters:
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
         - name: limit
           in: query
           required: false
@@ -3840,11 +3676,6 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       parameters:
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
         - name: limit
           in: query
           required: false
@@ -3878,11 +3709,6 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       parameters:
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
         - name: limit
           in: query
           required: false
@@ -6012,134 +5838,6 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
-  /api/v1/admin/vehicles/{id}/markets/{marketId}:
-    put:
-      tags:
-        - Admin - Markets
-      operationId: putApiV1AdminVehiclesIdMarketsMarketId
-      summary: Assign or update vehicle market eligibility
-      description:
-        Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
-        returned in the standard data envelope.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: marketId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          description: Successful response. Standard data envelope.
-        '400':
-          $ref: '#/components/responses/Problem'
-        '401':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-    delete:
-      tags:
-        - Admin - Markets
-      operationId: deleteApiV1AdminVehiclesIdMarketsMarketId
-      summary: Remove vehicle market eligibility
-      description:
-        Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
-        returned in the standard data envelope.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: marketId
-          in: path
-          required: true
-          schema:
-            type: string
-      security:
-        - BearerAuth: []
-      responses:
-        '204':
-          description: Operation completed.
-        '400':
-          $ref: '#/components/responses/Problem'
-        '401':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-  /api/v1/admin/vehicles/bulk-market-assignment:
-    post:
-      tags:
-        - Admin - Markets
-      operationId: postApiV1AdminVehiclesBulkmarketassignment
-      summary: Bulk assign market eligibility to vehicles
-      description:
-        Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
-        returned in the standard data envelope.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          description: Successful response. Standard data envelope.
-        '400':
-          $ref: '#/components/responses/Problem'
-        '401':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-  /api/v1/market-context:
-    get:
-      tags:
-        - Markets
-      operationId: getMarketContext
-      summary: Resolve active market context
-      description:
-        A valid market query explicitly selects the client market. Without one, returns the first active market by
-        slug. IP geolocation is not configured in this deployment; clients may override by selecting a market.
-      parameters:
-        - name: market
-          in: query
-          required: false
-          schema:
-            type: string
-            maxLength: 100
-      responses:
-        '200':
-          description: Selected market context, including a null market when none are active.
-        '400':
-          $ref: '#/components/responses/Problem'
   /api/v1/admin/catalog/makes/{id}:
     patch:
       tags:
@@ -6215,7 +5913,7 @@ components:
       name: greenway_refresh_token
   responses:
     PublicVehicle:
-      description: Published, available vehicle eligible for the selected destination market. Includes its asking price for that market; internal costs and minimum sale price are absent.
+      description: Published, available vehicle stocked in the vehicle stock country. Includes its asking price in USD; internal costs and minimum sale price are absent.
       content:
         application/json:
           schema:
@@ -6229,7 +5927,7 @@ components:
               meta:
                 $ref: '#/components/schemas/RequestMeta'
     PublicVehicles:
-      description: Market-eligible published and available vehicles.
+      description: Published and available vehicles filtered by stock country.
       content:
         application/json:
           schema:
@@ -6284,8 +5982,9 @@ components:
       properties:
         currency:
           type: string
-          pattern: ^[A-Z]{3}$
-          example: PKR
+          enum:
+            - USD
+          example: USD
     UpdateQuoteInput:
       type: object
       additionalProperties: false
@@ -6546,17 +6245,17 @@ components:
             - string
             - 'null'
           pattern: ^\d{1,18}$
-          description: Customer-visible asking price for the selected market, in minor currency units.
+          description: Customer-visible asking price in USD minor units.
         availableDiscountMinor:
           type:
             - string
             - 'null'
           pattern: ^\d{1,18}$
-          description: Customer-visible discount amount for the selected market, in minor currency units.
+          description: Customer-visible discount amount in USD minor units.
         currencyCode:
           type: string
           pattern: ^[A-Z]{3}$
-          description: Currency used by the selected market's asking price.
+          description: Currency used by the vehicle's USD asking price.
         mileageKm:
           type:
             - integer
@@ -6885,78 +6584,6 @@ components:
           type:
             - string
             - 'null'
-    MarketInput:
-      type: object
-      additionalProperties: false
-      required:
-        - countryId
-        - slug
-        - currencyCode
-        - locale
-      properties:
-        countryId:
-          type: integer
-          minimum: 1
-        slug:
-          type: string
-          pattern: ^[a-z][a-z0-9-]{1,99}$
-        currencyCode:
-          type: string
-          pattern: ^[A-Z]{3}$
-        locale:
-          type: string
-        salesEmail:
-          type:
-            - string
-            - 'null'
-          format: email
-        salesPhone:
-          type:
-            - string
-            - 'null'
-        salesWhatsapp:
-          type:
-            - string
-            - 'null'
-        seoTitle:
-          type:
-            - string
-            - 'null'
-        seoDescription:
-          type:
-            - string
-            - 'null'
-    MarketPatch:
-      type: object
-      additionalProperties: false
-      properties:
-        slug:
-          type: string
-        currencyCode:
-          type: string
-        locale:
-          type: string
-        salesEmail:
-          type:
-            - string
-            - 'null'
-          format: email
-        salesPhone:
-          type:
-            - string
-            - 'null'
-        salesWhatsapp:
-          type:
-            - string
-            - 'null'
-        seoTitle:
-          type:
-            - string
-            - 'null'
-        seoDescription:
-          type:
-            - string
-            - 'null'
     VehicleInput:
       type: object
       additionalProperties: false
@@ -7249,44 +6876,6 @@ components:
           items:
             type: integer
             minimum: 1
-    VehicleMarketsInput:
-      type: object
-      additionalProperties: false
-      required:
-        - markets
-      properties:
-        markets:
-          type: array
-          items:
-            type: object
-            additionalProperties: false
-            required:
-              - marketId
-              - isActive
-            properties:
-              marketId:
-                type: string
-                format: uuid
-              isActive:
-                type: boolean
-              featured:
-                type: boolean
-              priority:
-                type: integer
-              availableFrom:
-                type:
-                  - string
-                  - 'null'
-                format: date-time
-              availableUntil:
-                type:
-                  - string
-                  - 'null'
-                format: date-time
-              marketNotes:
-                type:
-                  - string
-                  - 'null'
     VehicleCostingInput:
       type: object
       additionalProperties: false
@@ -7315,7 +6904,7 @@ components:
           type:
             - string
             - 'null'
-    VehicleMarketPricingInput:
+    VehiclePricingInput:
       type: object
       additionalProperties: false
       required:
@@ -7327,13 +6916,13 @@ components:
             - string
             - 'null'
           pattern: ^\d{1,18}$
-          description: Customer-visible asking price for this market, in minor currency units.
+          description: Customer-visible asking price in USD minor units.
         availableDiscountMinor:
           type:
             - string
             - 'null'
           pattern: ^\d{1,18}$
-          description: Optional customer-visible discount amount for the market.
+          description: Optional customer-visible discount amount in USD.
         minimumSalePriceMinor:
           type:
             - string
@@ -7424,14 +7013,11 @@ components:
       additionalProperties: false
       required:
         - vehicleReferenceNo
-        - marketSlug
         - consentGiven
       properties:
         vehicleReferenceNo:
           type: string
           pattern: ^GW-[0-9]+$
-        marketSlug:
-          type: string
         destinationCountryId:
           type:
             - integer

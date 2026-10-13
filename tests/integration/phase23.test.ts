@@ -102,9 +102,6 @@ async function fixture() {
   const stock = await pool.query<{ id: number }>(
     "INSERT INTO countries (iso2,iso3,name) VALUES ('JP','JPN','Japan') RETURNING id"
   );
-  const destination = await pool.query<{ id: number }>(
-    "INSERT INTO countries (iso2,iso3,name) VALUES ('PK','PAK','Pakistan') RETURNING id"
-  );
   const make = await pool.query<{ id: number }>(
     "INSERT INTO makes (name,slug) VALUES ('Toyota','toyota') RETURNING id"
   );
@@ -115,10 +112,6 @@ async function fixture() {
   const feature = await pool.query<{ id: number }>(
     "INSERT INTO features (name) VALUES ('ABS') RETURNING id"
   );
-  const market = await pool.query<{ id: string }>(
-    "INSERT INTO markets (country_id,slug,status,currency_code,locale) VALUES ($1,'pakistan','active','PKR','en-PK') RETURNING id",
-    [destination.rows[0]!.id]
-  );
   const source = await pool.query<{ id: string }>(
     "INSERT INTO inventory_sources (company_name,contact_name,email) VALUES ('Secret Supplier','Secret Contact','secret@example.test') RETURNING id"
   );
@@ -127,17 +120,11 @@ async function fixture() {
      VALUES ($1,$2,2024,$3,'Exact Corolla','published',now(),$4,1234500,'USD') RETURNING id,reference_no`,
     [make.rows[0]!.id, model.rows[0]!.id, stock.rows[0]!.id, source.rows[0]!.id]
   );
-  await pool.query(
-    'INSERT INTO vehicle_markets (vehicle_id,market_id,is_active) VALUES ($1,$2,true)',
-    [vehicle.rows[0]!.id, market.rows[0]!.id]
-  );
   return {
     stockId: stock.rows[0]!.id,
-    destinationId: destination.rows[0]!.id,
     makeId: make.rows[0]!.id,
     modelId: model.rows[0]!.id,
     featureId: feature.rows[0]!.id,
-    marketId: market.rows[0]!.id,
     sourceId: source.rows[0]!.id,
     vehicleId: vehicle.rows[0]!.id,
     referenceNo: vehicle.rows[0]!.reference_no
@@ -153,7 +140,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
     await applySeeds(pool);
   });
   it('protects source and costing data while publication obeys destination eligibility', async () => {
-    const { app: api, pool } = requireDependencies();
+    const { app: api } = requireDependencies();
     const owner = await staff('super_admin');
     const content = await staff('content_manager');
     const f = await fixture();
@@ -165,7 +152,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
           .set('Authorization', `Bearer ${content.token}`)
       ).status
     ).toBe(403);
-    const publicResponse = await request(api).get('/api/v1/vehicles?market=pakistan');
+    const publicResponse = await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`);
     expect(publicResponse.status).toBe(200);
     expect(JSON.stringify(publicResponse.body)).not.toContain('Secret Supplier');
     expect(JSON.stringify(publicResponse.body)).not.toContain('1234500');
@@ -231,28 +218,13 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
           .post(`/api/v1/admin/vehicles/${id}/publish`)
           .set('Authorization', `Bearer ${owner.token}`)
       ).status
-    ).toBe(409);
-    expect(
-      (
-        await request(api)
-          .put(`/api/v1/admin/vehicles/${id}/markets`)
-          .set('Authorization', `Bearer ${owner.token}`)
-          .send({ markets: [{ marketId: f.marketId, isActive: true }] })
-      ).status
     ).toBe(200);
     expect(
-      (
-        await request(api)
-          .post(`/api/v1/admin/vehicles/${id}/publish`)
-          .set('Authorization', `Bearer ${owner.token}`)
-      ).status
-    ).toBe(200);
-    expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+      ((await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as { data: unknown[] })
         .data
     ).toHaveLength(2);
     const publicCreated = await request(api).get(
-      `/api/v1/vehicles/${(createdVehicle.body as { data: { referenceNo: string } }).data.referenceNo}?market=pakistan`
+      `/api/v1/vehicles/${(createdVehicle.body as { data: { referenceNo: string } }).data.referenceNo}`
     );
     expect(publicCreated.status).toBe(200);
     expect((publicCreated.body as { data: Record<string, unknown> }).data).toMatchObject({
@@ -272,7 +244,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+      ((await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as { data: unknown[] })
         .data
     ).toHaveLength(1);
     expect(
@@ -290,23 +262,18 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+      ((await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as { data: unknown[] })
         .data
     ).toHaveLength(1);
-    await pool.query("UPDATE markets SET status='inactive' WHERE id=$1", [f.marketId]);
-    expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
-        .data
-    ).toHaveLength(0);
   });
 
-  it('sets market asking and minimum sale prices while keeping the floor private', async () => {
+  it('sets global USD asking and minimum sale prices while keeping the floor private', async () => {
     const { app: api } = requireDependencies();
     const administrator = await staff('super_admin');
     const salesperson = await staff('sales_agent');
     const content = await staff('content_manager');
     const f = await fixture();
-    const path = `/api/v1/admin/vehicles/${f.vehicleId}/markets/${f.marketId}/pricing`;
+    const path = `/api/v1/admin/vehicles/${f.vehicleId}/pricing`;
 
     expect(
       (await request(api).get(path).set('Authorization', `Bearer ${content.token}`)).status
@@ -323,7 +290,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
     expect(update.status, update.text).toBe(200);
     const updateData = (update.body as { data: Record<string, unknown> }).data;
     expect(updateData).toMatchObject({
-      currencyCode: 'PKR',
+      currencyCode: 'USD',
       askingPriceMinor: '250000000',
       minimumSalePriceMinor: '225000000',
       availableDiscountMinor: '5000000'
@@ -346,14 +313,14 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
     expect(invalid.status).toBe(422);
 
     const publicVehicle = await request(api).get(
-      `/api/v1/vehicles/${f.referenceNo}?market=pakistan`
+      `/api/v1/vehicles/${f.referenceNo}`
     );
     expect(publicVehicle.status).toBe(200);
     const publicData = (publicVehicle.body as { data: Record<string, unknown> }).data;
     expect(publicData).toMatchObject({
       askingPriceMinor: '250000000',
       availableDiscountMinor: '5000000',
-      currencyCode: 'PKR'
+      currencyCode: 'USD'
     });
     expect(JSON.stringify(publicVehicle.body)).not.toContain('minimumSalePriceMinor');
     expect(JSON.stringify(publicVehicle.body)).not.toContain('225000000');
@@ -475,7 +442,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       '/api/v1/admin/reports/sales',
       '/api/v1/admin/reports/inventory',
       '/api/v1/admin/reports/vehicles',
-      '/api/v1/admin/reports/markets',
+      '/api/v1/admin/reports/countries',
       '/api/v1/admin/reports/salespeople',
       '/api/v1/admin/reports/sources',
       '/api/v1/admin/reports/lost-reasons',
@@ -497,10 +464,9 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       .post('/api/v1/admin/content/blog')
       .set('Authorization', `Bearer ${content.token}`)
       .send({
-        slug: 'market-blog',
+        slug: 'inventory-blog',
         title: 'Pakistan news',
         content: { html: '<p>Market</p>' },
-        markets: [f.marketId]
       });
     expect(blog.status).toBe(201);
     const blogId = (blog.body as { data: { id: string } }).data.id;
@@ -513,11 +479,11 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     const matchingBlogs = await request(api).get('/api/v1/content/blog');
-    const unmatchedBlogs = await request(api).get('/api/v1/content/blog?market=unassigned');
+    const unmatchedBlogs = await request(api).get('/api/v1/content/blog');
     expect(matchingBlogs.status, JSON.stringify(matchingBlogs.body)).toBe(200);
     expect(unmatchedBlogs.status, JSON.stringify(unmatchedBlogs.body)).toBe(200);
     expect((matchingBlogs.body as { data: unknown[] }).data).toHaveLength(1);
-    expect((unmatchedBlogs.body as { data: unknown[] }).data).toHaveLength(0);
+    expect((unmatchedBlogs.body as { data: unknown[] }).data).toHaveLength(1);
     const costDenied = await request(api)
       .get(`/api/v1/admin/vehicles/${randomUUID()}/costing`)
       .set('Authorization', `Bearer ${content.token}`);
@@ -717,7 +683,6 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       .set('Idempotency-Key', `lead-${randomUUID()}`)
       .send({
         vehicleReferenceNo: f.referenceNo,
-        marketSlug: 'pakistan',
         consentGiven: true
       });
     expect(unverifiedLead.status).toBe(403);
@@ -729,7 +694,6 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
     const other = await staff('sales_agent');
     const payload = {
       vehicleReferenceNo: f.referenceNo,
-      marketSlug: 'pakistan',
       consentGiven: true
     };
     const key = `lead-${randomUUID()}`;
@@ -958,33 +922,6 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
     await pool.query("UPDATE vehicles SET availability_status='available' WHERE id=$1", [
       f.vehicleId
     ]);
-    await pool.query('UPDATE vehicle_markets SET is_active=false WHERE vehicle_id=$1', [
-      f.vehicleId
-    ]);
-    expect(
-      (
-        await request(api)
-          .post('/api/v1/leads')
-          .set('Authorization', `Bearer ${buyer.token}`)
-          .set('X-Forwarded-For', '192.0.2.12')
-          .set('Idempotency-Key', `lead-${randomUUID()}`)
-          .send(payload)
-      ).status
-    ).toBe(404);
-    await pool.query('UPDATE vehicle_markets SET is_active=true WHERE vehicle_id=$1', [
-      f.vehicleId
-    ]);
-    await pool.query("UPDATE markets SET status='inactive' WHERE id=$1", [f.marketId]);
-    expect(
-      (
-        await request(api)
-          .post('/api/v1/leads')
-          .set('Authorization', `Bearer ${buyer.token}`)
-          .set('X-Forwarded-For', '192.0.2.13')
-          .set('Idempotency-Key', `lead-${randomUUID()}`)
-          .send(payload)
-      ).status
-    ).toBe(404);
   });
 });
 
@@ -1004,20 +941,14 @@ integration('Phase 4–5 commercial workflow', () => {
     const manager = await staff('sales_manager');
     const f = await fixture();
     await pool.query(
-      "UPDATE vehicles SET purchase_cost_currency='PKR', estimated_local_cost_minor=250000 WHERE id=$1",
+      "UPDATE vehicles SET purchase_cost_currency='USD', estimated_local_cost_minor=250000, minimum_sale_price_minor=1600000 WHERE id=$1",
       [f.vehicleId]
     );
-    await pool.query(
-      `INSERT INTO vehicle_market_pricing
-        (vehicle_id, market_id, currency_code, asking_price_minor, minimum_sale_price_minor)
-       VALUES ($1, $2, 'PKR', 2000000, 1600000)`,
-      [f.vehicleId, f.marketId]
-    );
     const lead = await pool.query<{ id: string; reference_no: string }>(
-      `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,market_id)
+      `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,stock_country_id)
        VALUES ($1,'{"title":"Exact Corolla"}','Quote Buyer','buyer@example.test','qualified',$2,$3)
        RETURNING id,reference_no`,
-      [f.vehicleId, agent.id, f.marketId]
+      [f.vehicleId, agent.id, f.stockId]
     );
     const leadRef = lead.rows[0]!.reference_no;
     const created = await request(api)
@@ -1227,7 +1158,7 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]!.status
     ).toBe('accepted');
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] })
         .data
     ).toHaveLength(0);
 
@@ -1275,7 +1206,7 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]
     ).toMatchObject({ status: 'completed', availability_status: 'sold' });
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] })
         .data
     ).toHaveLength(0);
   });
@@ -1285,10 +1216,10 @@ integration('Phase 4–5 commercial workflow', () => {
     const agent = await staff('sales_agent');
     const f = await fixture();
     const lead = await pool.query<{ id: string; reference_no: string }>(
-      `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,market_id)
+        `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,stock_country_id)
        VALUES ($1,'{"title":"Hold Buyer"}','Hold Buyer','hold@example.test','qualified',$2,$3)
        RETURNING id,reference_no`,
-      [f.vehicleId, agent.id, f.marketId]
+      [f.vehicleId, agent.id, f.stockId]
     );
     const reserve = (key: string, expiresInHours = 24) =>
       request(api)
@@ -1313,7 +1244,7 @@ integration('Phase 4–5 commercial workflow', () => {
       f.vehicleId
     ]);
     expect(
-      ((await request(api).get('/api/v1/vehicles?market=pakistan')).body as { data: unknown[] })
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] })
         .data
     ).toHaveLength(1);
     const replacementKey = `reserve-c-${randomUUID()}`;
@@ -1362,13 +1293,13 @@ integration('Phase 4–5 commercial workflow', () => {
     const { app: api, pool } = requireDependencies();
     const manager = await staff('sales_manager');
     const f = await fixture();
-    await pool.query("UPDATE vehicles SET purchase_cost_currency='PKR' WHERE id=$1", [f.vehicleId]);
+    await pool.query("UPDATE vehicles SET purchase_cost_currency='USD' WHERE id=$1", [f.vehicleId]);
     const createLead = async (emailAddress: string) => {
       const lead = await pool.query<{ reference_no: string }>(
-        `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,market_id)
+        `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,stock_country_id)
          VALUES ($1,'{"title":"Lifecycle Corolla"}','Lifecycle Buyer',$2,'qualified',$3,$4)
          RETURNING reference_no`,
-        [f.vehicleId, emailAddress, manager.id, f.marketId]
+        [f.vehicleId, emailAddress, manager.id, f.stockId]
       );
       return lead.rows[0]!.reference_no;
     };
