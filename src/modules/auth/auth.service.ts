@@ -147,6 +147,54 @@ export class AuthService {
     }
   }
 
+  public async acceptStaffInvitation(
+    token: string,
+    password: string
+  ): Promise<{ accepted: true; email: string; fullName: string }> {
+    const passwordHash = await hashPassword(password);
+    try {
+      return await this.database.transaction().execute(async (trx) => {
+        const invitation = await trx
+          .selectFrom('staff_invitations')
+          .selectAll()
+          .where('token_hash', '=', hashOpaqueToken(token))
+          .where('accepted_at', 'is', null)
+          .where('revoked_at', 'is', null)
+          .where('expires_at', '>', new Date())
+          .forUpdate()
+          .executeTakeFirst();
+        if (!invitation) throw authenticationError('The invitation is invalid or expired.');
+        const user = await trx
+          .insertInto('users')
+          .values({
+            user_type: 'staff',
+            email: invitation.email,
+            password_hash: passwordHash,
+            full_name: invitation.full_name,
+            email_verified_at: new Date()
+          })
+          .returning(['id', 'email', 'full_name'])
+          .executeTakeFirstOrThrow();
+        await trx
+          .insertInto('user_roles')
+          .values({ user_id: user.id, role_id: invitation.role_id })
+          .execute();
+        await trx
+          .updateTable('staff_invitations')
+          .set({ accepted_at: new Date(), updated_at: new Date() })
+          .where('id', '=', invitation.id)
+          .execute();
+        await audit(trx, null, 'staff.invitation.accept', 'staff_invitation', invitation.id, {
+          userId: user.id
+        });
+        return { accepted: true as const, email: user.email, fullName: user.full_name };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw conflictError('A user with this email already exists.');
+      throw error;
+    }
+  }
+
   public async login(
     input: LoginInput,
     metadata: { ip?: string; userAgent?: string }

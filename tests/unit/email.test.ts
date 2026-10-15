@@ -106,6 +106,23 @@ describe('email service SMTP configuration', () => {
     expect(message?.html).toContain('Your password was changed');
   });
 
+  it('sends a branded staff invitation with the frontend accept link', async () => {
+    const email = createEmailService(environment());
+    await email.sendStaffInvitationEmail({
+      email: 'new-agent@greenway.example',
+      fullName: 'New Agent',
+      roleName: 'sales_agent',
+      token: 'invitation-token'
+    });
+    const message = sendMailMock.mock.calls[0]?.[0];
+    expect(message?.subject).toBe('You are invited to Green Way Motors');
+    expect(message?.to).toBe('new-agent@greenway.example');
+    expect(message?.text).toContain(
+      'https://www.greenway.example/accept-staff-invitation?token=invitation-token'
+    );
+    expect(message?.html).toContain('Accept invitation');
+  });
+
   it('uses implicit TLS on port 465', () => {
     createEmailService(environment({ SMTP_PORT: '465', SMTP_USE_TLS: 'false' }));
 

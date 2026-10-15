@@ -442,6 +442,20 @@ export interface SalespersonRatings {
   salesperson_id: string;
 }
 
+export interface StaffInvitations {
+  accepted_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  email: string;
+  expires_at: Timestamp;
+  full_name: string;
+  id: Generated<string>;
+  invited_by: string;
+  revoked_at: Timestamp | null;
+  role_id: number;
+  token_hash: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface SavedSearches {
   created_at: Generated<Timestamp>;
   filters: Json;
@@ -679,6 +693,7 @@ export interface DB {
   roles: Roles;
   salesperson_ratings: SalespersonRatings;
   saved_searches: SavedSearches;
+  staff_invitations: StaffInvitations;
   schema_migrations: SchemaMigrations;
   upload_intents: UploadIntents;
   user_mfa: UserMfa;

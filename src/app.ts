@@ -112,7 +112,7 @@ export function createApp(environment: Environment, dependencies: AppDependencie
     '/api/v1/admin',
     authenticate(authService),
     createCmsAdminRouter(dependencies.database.db),
-    createStaffManagementRouter(dependencies.database.db),
+    createStaffManagementRouter(dependencies.database.db, environment),
     createDashboardRouter(dependencies.database.db),
     createVehicleImportRouter(dependencies.database.db),
     createVehicleWorkflowRouter(dependencies.database.db),

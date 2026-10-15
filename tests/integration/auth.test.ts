@@ -37,7 +37,8 @@ const environment = parseEnvironment({
 const email: EmailService = {
   sendVerificationEmail: () => Promise.resolve(),
   sendPasswordResetEmail: () => Promise.resolve(),
-  sendPasswordChangedEmail: () => Promise.resolve()
+  sendPasswordChangedEmail: () => Promise.resolve(),
+  sendStaffInvitationEmail: () => Promise.resolve()
 };
 const redis: RedisConnection = {
   ping: () => Promise.resolve(),

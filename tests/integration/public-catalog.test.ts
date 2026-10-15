@@ -35,7 +35,8 @@ const environment = parseEnvironment({
 const email: EmailService = {
   sendVerificationEmail: () => Promise.resolve(),
   sendPasswordResetEmail: () => Promise.resolve(),
-  sendPasswordChangedEmail: () => Promise.resolve()
+  sendPasswordChangedEmail: () => Promise.resolve(),
+  sendStaffInvitationEmail: () => Promise.resolve()
 };
 const redis: RedisConnection = {
   ping: () => Promise.resolve(),
@@ -109,7 +110,7 @@ async function createFixture() {
     featureId: feature.rows[0]!.id,
     referenceNo: published.rows[0]!.reference_no,
     stockCountryId: country.rows[0]!.id,
-    vehicleId: published.rows[0]!.id,
+    vehicleId: published.rows[0]!.id
   };
 }
 
@@ -160,9 +161,7 @@ integration('public catalog and vehicle APIs', () => {
   it('returns a published vehicle detail and keeps unpublished inventory private', async () => {
     const { app: api } = requireDependencies();
     const fixture = await createFixture();
-    const detail = await request(api).get(
-      `/api/v1/vehicles/${fixture.referenceNo}`
-    );
+    const detail = await request(api).get(`/api/v1/vehicles/${fixture.referenceNo}`);
     expect(detail.status).toBe(200);
     const detailData = (detail.body as { data: Record<string, unknown> }).data;
     expect(detailData).toMatchObject({ askingPriceMinor: '25000000', currencyCode: 'USD' });
@@ -171,17 +170,18 @@ integration('public catalog and vehicle APIs', () => {
     expect(JSON.stringify(detail.body)).not.toContain('private cost note');
     expect(JSON.stringify(detail.body)).not.toContain('minimumSalePriceMinor');
     expect(JSON.stringify(detail.body)).not.toContain('225000000');
-    expect(
-      (await request(api).get('/api/v1/vehicles/GW-999999999')).status
-    ).toBe(404);
+    expect((await request(api).get('/api/v1/vehicles/GW-999999999')).status).toBe(404);
   });
 
   it('rejects unsupported sorts and malformed cursors', async () => {
     const { app: api } = requireDependencies();
     const fixture = await createFixture();
     expect(
-      (await request(api).get(`/api/v1/vehicles?stockCountryId=${fixture.stockCountryId}&sort=price_desc`))
-        .status
+      (
+        await request(api).get(
+          `/api/v1/vehicles?stockCountryId=${fixture.stockCountryId}&sort=price_desc`
+        )
+      ).status
     ).toBe(422);
     expect(
       (
@@ -196,7 +196,9 @@ integration('public catalog and vehicle APIs', () => {
     const { app: api, rawPool: pool } = requireDependencies();
     const fixture = await createFixture();
     const all = await request(api).get('/api/v1/vehicles');
-    const country = await request(api).get(`/api/v1/vehicles?stockCountryId=${fixture.stockCountryId}`);
+    const country = await request(api).get(
+      `/api/v1/vehicles?stockCountryId=${fixture.stockCountryId}`
+    );
     expect(all.status).toBe(200);
     expect((all.body as { data: unknown[] }).data).toHaveLength(1);
     expect((country.body as { data: unknown[] }).data).toHaveLength(1);

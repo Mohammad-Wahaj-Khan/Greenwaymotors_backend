@@ -38,10 +38,20 @@ const environment = parseEnvironment({
   MAIL_PROVIDER: 'mailpit',
   LOG_LEVEL: 'fatal'
 });
+const sentStaffInvitations: Array<{
+  email: string;
+  fullName: string;
+  roleName: string;
+  token: string;
+}> = [];
 const email: EmailService = {
   sendVerificationEmail: () => Promise.resolve(),
   sendPasswordResetEmail: () => Promise.resolve(),
-  sendPasswordChangedEmail: () => Promise.resolve()
+  sendPasswordChangedEmail: () => Promise.resolve(),
+  sendStaffInvitationEmail: (input) => {
+    sentStaffInvitations.push(input);
+    return Promise.resolve();
+  }
 };
 const redis: RedisConnection = {
   ping: () => Promise.resolve(),
@@ -133,11 +143,74 @@ async function fixture() {
 
 integration('Phase 2–3 inventory and CRM APIs', () => {
   beforeEach(async () => {
+    sentStaffInvitations.length = 0;
     const { pool } = requireDependencies();
     await pool.query('DROP SCHEMA public CASCADE');
     await pool.query('CREATE SCHEMA public');
     await applyInitialSchema(pool);
     await applySeeds(pool);
+  });
+  it('creates an internal account only after the invitee accepts the email invitation', async () => {
+    const { pool, app: api } = requireDependencies();
+    const owner = await staff('super_admin');
+    const inviteeEmail = `invited-${randomUUID()}@example.test`;
+    const invite = await request(api)
+      .post('/api/v1/admin/staff')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ email: inviteeEmail, fullName: 'Invited Salesperson', roleName: 'sales_agent' });
+    expect(invite.status).toBe(201);
+    expect((invite.body as { data: { status: string } }).data.status).toBe('pending');
+    expect(await pool.query('SELECT id FROM users WHERE email = $1', [inviteeEmail])).toMatchObject(
+      { rowCount: 0 }
+    );
+    const loginBeforeAcceptance = await request(api)
+      .post('/api/v1/auth/login')
+      .send({ email: inviteeEmail, password: 'strong-password-123' });
+    expect(loginBeforeAcceptance.status).toBe(401);
+
+    const pending = await pool.query<{ payload: { ciphertext: string } }>(
+      "SELECT payload FROM outbox_events WHERE topic = 'email.staff_invitation' ORDER BY created_at DESC LIMIT 1"
+    );
+    expect(pending.rows[0]?.payload.ciphertext).toBeTruthy();
+    expect(pending.rows[0]?.payload.ciphertext).not.toContain(
+      sentStaffInvitations[0]?.token ?? 'token'
+    );
+    expect(
+      await processOutboxEvent(
+        requireDependencies().db,
+        environment,
+        email,
+        pino({ level: 'silent' })
+      )
+    ).toBe(true);
+    const delivered = sentStaffInvitations[0];
+    expect(delivered?.email).toBe(inviteeEmail);
+    expect(delivered?.token).toBeTruthy();
+
+    const accepted = await request(api)
+      .post('/api/v1/auth/staff-invitations/accept')
+      .send({ token: delivered!.token, newPassword: 'new-strong-password-123' });
+    expect(accepted.status).toBe(201);
+    expect(accepted.body).toMatchObject({ data: { accepted: true, email: inviteeEmail } });
+    const account = await pool.query<{ status: string; email_verified_at: Date | null }>(
+      'SELECT status, email_verified_at FROM users WHERE email = $1',
+      [inviteeEmail]
+    );
+    expect(account.rows[0]).toMatchObject({ status: 'active' });
+    expect(account.rows[0]?.email_verified_at).toBeTruthy();
+    const assignedRole = await pool.query<{ name: string }>(
+      'SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id JOIN users u ON u.id = ur.user_id WHERE u.email = $1',
+      [inviteeEmail]
+    );
+    expect(assignedRole.rows).toEqual([{ name: 'sales_agent' }]);
+    const loginAfterAcceptance = await request(api)
+      .post('/api/v1/auth/login')
+      .send({ email: inviteeEmail, password: 'new-strong-password-123' });
+    expect(loginAfterAcceptance.status).toBe(200);
+    const replay = await request(api)
+      .post('/api/v1/auth/staff-invitations/accept')
+      .send({ token: delivered!.token, newPassword: 'new-strong-password-123' });
+    expect(replay.status).toBe(401);
   });
   it('protects source and costing data while publication obeys destination eligibility', async () => {
     const { app: api } = requireDependencies();
@@ -200,9 +273,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       });
     expect(createdVehicle.status).toBe(201);
     const id = (createdVehicle.body as { data: { id: string } }).data.id;
-    expect(
-      (createdVehicle.body as { data: Record<string, unknown> }).data
-    ).toMatchObject({
+    expect((createdVehicle.body as { data: Record<string, unknown> }).data).toMatchObject({
       modelCode: 'AXIO-G-2023',
       grade: 'G',
       manufactureMonth: 4,
@@ -220,8 +291,11 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as { data: unknown[] })
-        .data
+      (
+        (await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as {
+          data: unknown[];
+        }
+      ).data
     ).toHaveLength(2);
     const publicCreated = await request(api).get(
       `/api/v1/vehicles/${(createdVehicle.body as { data: { referenceNo: string } }).data.referenceNo}`
@@ -244,8 +318,11 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as { data: unknown[] })
-        .data
+      (
+        (await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as {
+          data: unknown[];
+        }
+      ).data
     ).toHaveLength(1);
     expect(
       (
@@ -262,8 +339,11 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       ).status
     ).toBe(200);
     expect(
-      ((await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as { data: unknown[] })
-        .data
+      (
+        (await request(api).get(`/api/v1/vehicles?stockCountryId=${f.stockId}`)).body as {
+          data: unknown[];
+        }
+      ).data
     ).toHaveLength(1);
   });
 
@@ -312,9 +392,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       .send({ askingPriceMinor: '220000000', minimumSalePriceMinor: '225000000' });
     expect(invalid.status).toBe(422);
 
-    const publicVehicle = await request(api).get(
-      `/api/v1/vehicles/${f.referenceNo}`
-    );
+    const publicVehicle = await request(api).get(`/api/v1/vehicles/${f.referenceNo}`);
     expect(publicVehicle.status).toBe(200);
     const publicData = (publicVehicle.body as { data: Record<string, unknown> }).data;
     expect(publicData).toMatchObject({
@@ -466,7 +544,7 @@ integration('Phase 2–3 inventory and CRM APIs', () => {
       .send({
         slug: 'inventory-blog',
         title: 'Pakistan news',
-        content: { html: '<p>Market</p>' },
+        content: { html: '<p>Market</p>' }
       });
     expect(blog.status).toBe(201);
     const blogId = (blog.body as { data: { id: string } }).data.id;
@@ -1158,8 +1236,7 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]!.status
     ).toBe('accepted');
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(0);
 
     for (const status of ['source_confirmed', 'processing', 'ready_for_delivery']) {
@@ -1206,8 +1283,7 @@ integration('Phase 4–5 commercial workflow', () => {
       ).rows[0]
     ).toMatchObject({ status: 'completed', availability_status: 'sold' });
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(0);
   });
 
@@ -1216,7 +1292,7 @@ integration('Phase 4–5 commercial workflow', () => {
     const agent = await staff('sales_agent');
     const f = await fixture();
     const lead = await pool.query<{ id: string; reference_no: string }>(
-        `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,stock_country_id)
+      `INSERT INTO leads (vehicle_id,vehicle_snapshot,contact_name,contact_email,status,assigned_to,stock_country_id)
        VALUES ($1,'{"title":"Hold Buyer"}','Hold Buyer','hold@example.test','qualified',$2,$3)
        RETURNING id,reference_no`,
       [f.vehicleId, agent.id, f.stockId]
@@ -1244,8 +1320,7 @@ integration('Phase 4–5 commercial workflow', () => {
       f.vehicleId
     ]);
     expect(
-      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] })
-        .data
+      ((await request(api).get('/api/v1/vehicles')).body as { data: unknown[] }).data
     ).toHaveLength(1);
     const replacementKey = `reserve-c-${randomUUID()}`;
     const replacement = await reserve(replacementKey);

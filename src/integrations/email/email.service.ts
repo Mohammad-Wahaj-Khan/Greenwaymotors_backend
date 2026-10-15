@@ -5,6 +5,12 @@ export interface EmailService {
   sendVerificationEmail(input: { email: string; token: string }): Promise<void>;
   sendPasswordResetEmail(input: { email: string; token: string }): Promise<void>;
   sendPasswordChangedEmail(input: { email: string }): Promise<void>;
+  sendStaffInvitationEmail(input: {
+    email: string;
+    fullName: string;
+    roleName: string;
+    token: string;
+  }): Promise<void>;
 }
 
 export function createEmailService(environment: Environment): EmailService {
@@ -150,6 +156,16 @@ export function createEmailService(environment: Environment): EmailService {
         '/reset-password',
         token
       ),
-    sendPasswordChangedEmail: ({ email }) => sendPasswordChanged(email)
+    sendPasswordChangedEmail: ({ email }) => sendPasswordChanged(email),
+    sendStaffInvitationEmail: ({ email, roleName, token }) =>
+      sendAction(
+        email,
+        'You are invited to Green Way Motors',
+        'Accept your staff invitation',
+        `An administrator invited you to join Green Way Motors as ${roleName}. Accept the invitation and create your password to activate your staff account. This invitation expires in 7 days.`,
+        'Accept invitation',
+        '/accept-staff-invitation',
+        token
+      )
   };
 }

@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { DB } from '../../generated/database.types.js';
-import { hashPassword } from '../../core/auth/password.js';
 import { audit } from '../../core/db/audit.js';
+import type { Environment } from '../../config/env.js';
+import { createOpaqueToken, hashOpaqueToken } from '../../core/auth/token.js';
+import { encryptJson } from '../../core/security/encryption.js';
 import { notFoundError } from '../../core/errors/app-error.js';
 import { conflictError, forbiddenError, validationError } from '../../core/errors/http-errors.js';
 import { parseInput, sendData } from '../../core/http/api-response.js';
@@ -22,7 +24,6 @@ const newStaff = z
       .max(320)
       .transform((v) => v.toLowerCase()),
     fullName: z.string().trim().min(1).max(255),
-    password: z.string().min(12).max(256),
     roleName: z
       .enum([
         'sales_agent',
@@ -74,7 +75,10 @@ function scrub(value: unknown): unknown {
   return Object.fromEntries(entries);
 }
 
-export function createStaffManagementRouter(db: Kysely<DB>): Router {
+const invitationId = z.uuid();
+const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+
+export function createStaffManagementRouter(db: Kysely<DB>, environment: Environment): Router {
   const r = Router();
   r.get('/users', async (req, res) => {
     const q = parseInput(paging, req.query),
@@ -120,38 +124,197 @@ export function createStaffManagementRouter(db: Kysely<DB>): Router {
       !['sales_agent', 'content_manager'].includes(input.roleName)
     )
       throw forbiddenError('This administrator cannot assign that staff role.');
-    const passwordHash = await hashPassword(input.password);
     try {
-      const row = await db.transaction().execute(async (trx) => {
-        const user = await trx
-          .insertInto('users')
-          .values({
-            user_type: 'staff',
-            email: input.email,
-            password_hash: passwordHash,
-            full_name: input.fullName
-          })
-          .returning(['id', 'user_type', 'email', 'full_name', 'status', 'created_at'])
-          .executeTakeFirstOrThrow();
+      const result = await db.transaction().execute(async (trx) => {
+        const existingUser = await trx
+          .selectFrom('users')
+          .select('id')
+          .where('email', '=', input.email)
+          .executeTakeFirst();
+        if (existingUser) throw conflictError('A user with this email already exists.');
         const role = await trx
           .selectFrom('roles')
           .select('id')
           .where('name', '=', input.roleName)
           .executeTakeFirst();
         if (!role) throw validationError('Configured staff role does not exist.');
-        await trx.insertInto('user_roles').values({ user_id: user.id, role_id: role.id }).execute();
-        await audit(trx, req.auth!.user.id, 'staff.create', 'user', user.id, {
-          role: input.roleName
-        });
-        return user;
+        const pending = await trx
+          .selectFrom('staff_invitations')
+          .selectAll()
+          .where('email', '=', input.email)
+          .forUpdate()
+          .executeTakeFirst();
+        if (
+          pending?.accepted_at ||
+          (pending && !pending.revoked_at && pending.expires_at > new Date())
+        )
+          throw conflictError('A staff invitation for this email is already pending or accepted.');
+        const token = createOpaqueToken();
+        const expiresAt = new Date(Date.now() + invitationLifetimeMs);
+        const invitation = pending
+          ? await trx
+              .updateTable('staff_invitations')
+              .set({
+                full_name: input.fullName,
+                role_id: role.id,
+                token_hash: hashOpaqueToken(token),
+                invited_by: req.auth!.user.id,
+                expires_at: expiresAt,
+                accepted_at: null,
+                revoked_at: null,
+                updated_at: new Date()
+              })
+              .where('id', '=', pending.id)
+              .returning(['id', 'email', 'full_name', 'expires_at'])
+              .executeTakeFirstOrThrow()
+          : await trx
+              .insertInto('staff_invitations')
+              .values({
+                email: input.email,
+                full_name: input.fullName,
+                role_id: role.id,
+                token_hash: hashOpaqueToken(token),
+                invited_by: req.auth!.user.id,
+                expires_at: expiresAt
+              })
+              .returning(['id', 'email', 'full_name', 'expires_at'])
+              .executeTakeFirstOrThrow();
+        await trx
+          .insertInto('outbox_events')
+          .values({
+            topic: 'email.staff_invitation',
+            payload: {
+              ciphertext: encryptJson(environment, {
+                email: invitation.email,
+                fullName: invitation.full_name,
+                roleName: input.roleName,
+                token
+              })
+            }
+          })
+          .execute();
+        await audit(
+          trx,
+          req.auth!.user.id,
+          'staff.invitation.create',
+          'staff_invitation',
+          invitation.id,
+          {
+            role: input.roleName
+          }
+        );
+        return { invitation, roleName: input.roleName };
       });
-      sendData(res, row, 201);
+      sendData(res, { ...result.invitation, roleName: result.roleName, status: 'pending' }, 201);
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505')
         throw conflictError('A user with this email already exists.');
       throw error;
     }
   });
+  r.get('/staff-invitations', requirePermission('staff.read'), async (_req, res) => {
+    const rows = await db
+      .selectFrom('staff_invitations')
+      .innerJoin('roles', 'roles.id', 'staff_invitations.role_id')
+      .select([
+        'staff_invitations.id',
+        'staff_invitations.email',
+        'staff_invitations.full_name',
+        'roles.name as role_name',
+        'staff_invitations.expires_at',
+        'staff_invitations.accepted_at',
+        'staff_invitations.revoked_at',
+        'staff_invitations.created_at'
+      ])
+      .orderBy('staff_invitations.created_at', 'desc')
+      .execute();
+    sendData(
+      res,
+      rows.map((row) => ({
+        ...row,
+        status: row.accepted_at
+          ? 'accepted'
+          : row.revoked_at
+            ? 'revoked'
+            : row.expires_at <= new Date()
+              ? 'expired'
+              : 'pending'
+      }))
+    );
+  });
+  r.post(
+    '/staff-invitations/:invitationId/resend',
+    requirePermission('staff.manage'),
+    async (req, res) => {
+      const id = parseInput(invitationId, req.params.invitationId);
+      const token = createOpaqueToken();
+      const expiresAt = new Date(Date.now() + invitationLifetimeMs);
+      const result = await db.transaction().execute(async (trx) => {
+        const row = await trx
+          .selectFrom('staff_invitations')
+          .selectAll()
+          .where('id', '=', id)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!row) throw notFoundError;
+        if (row.accepted_at)
+          throw conflictError('This staff invitation has already been accepted.');
+        if (row.revoked_at) throw conflictError('This staff invitation has been revoked.');
+        const role = await trx
+          .selectFrom('roles')
+          .select('name')
+          .where('id', '=', row.role_id)
+          .executeTakeFirstOrThrow();
+        await trx
+          .updateTable('staff_invitations')
+          .set({
+            token_hash: hashOpaqueToken(token),
+            expires_at: expiresAt,
+            updated_at: new Date()
+          })
+          .where('id', '=', id)
+          .execute();
+        await trx
+          .insertInto('outbox_events')
+          .values({
+            topic: 'email.staff_invitation',
+            payload: {
+              ciphertext: encryptJson(environment, {
+                email: row.email,
+                fullName: row.full_name,
+                roleName: role.name,
+                token
+              })
+            }
+          })
+          .execute();
+        await audit(trx, req.auth!.user.id, 'staff.invitation.resend', 'staff_invitation', id);
+        return { id, email: row.email, expiresAt };
+      });
+      sendData(res, { ...result, status: 'pending' });
+    }
+  );
+  r.post(
+    '/staff-invitations/:invitationId/revoke',
+    requirePermission('staff.manage'),
+    async (req, res) => {
+      const id = parseInput(invitationId, req.params.invitationId);
+      const result = await db.transaction().execute(async (trx) => {
+        const row = await trx
+          .updateTable('staff_invitations')
+          .set({ revoked_at: new Date(), updated_at: new Date() })
+          .where('id', '=', id)
+          .where('accepted_at', 'is', null)
+          .where('revoked_at', 'is', null)
+          .returning(['id', 'email'])
+          .executeTakeFirst();
+        if (!row) throw notFoundError;
+        await audit(trx, req.auth!.user.id, 'staff.invitation.revoke', 'staff_invitation', id);
+        return row;
+      });
+      sendData(res, { ...result, status: 'revoked' });
+    }
+  );
   r.get('/staff/:userId', requirePermission('staff.read'), async (req, res) => {
     const id = parseInput(uuid, req.params.userId);
     const row = await db

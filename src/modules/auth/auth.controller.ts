@@ -59,6 +59,7 @@ interface AuthController {
   mfaChallenge: RequestHandler;
   mfaEnroll: RequestHandler;
   mfaConfirm: RequestHandler;
+  acceptStaffInvitation: RequestHandler;
 }
 
 export function createAuthController(
@@ -70,6 +71,14 @@ export function createAuthController(
     response
       .status(201)
       .json({ data: result.user, meta: { requestId: getRequestContext()?.requestId } });
+  };
+
+  const acceptStaffInvitation: RequestHandler = async (request, response) => {
+    const input = request.body as { token: string; newPassword: string };
+    const result = await service.acceptStaffInvitation(input.token, input.newPassword);
+    response
+      .status(201)
+      .json({ data: result, meta: { requestId: getRequestContext()?.requestId } });
   };
 
   const login: RequestHandler = async (request, response) => {
@@ -252,6 +261,7 @@ export function createAuthController(
     updateMe,
     mfaChallenge,
     mfaEnroll,
-    mfaConfirm
+    mfaConfirm,
+    acceptStaffInvitation
   };
 }
