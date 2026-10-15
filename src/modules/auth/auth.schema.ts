@@ -31,6 +31,9 @@ export const mfaCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).str
 export const resetPasswordSchema = tokenSchema
   .extend({ newPassword: z.string().min(10).max(256) })
   .strict();
+export const acceptStaffInvitationSchema = tokenSchema
+  .extend({ newPassword: z.string().min(10).max(256) })
+  .strict();
 export const changePasswordSchema = z
   .object({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(10).max(256) })
   .strict()

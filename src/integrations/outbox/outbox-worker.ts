@@ -11,6 +11,8 @@ const staleLockMs = 5 * 60 * 1000;
 interface MailPayload {
   email: string;
   token?: string;
+  fullName?: string;
+  roleName?: string;
 }
 
 export async function processOutboxEvent(
@@ -64,6 +66,15 @@ export async function processOutboxEvent(
       await email.sendPasswordResetEmail({ email: mail.email, token: mail.token });
     } else if (event.topic === 'email.password_changed') {
       await email.sendPasswordChangedEmail({ email: mail.email });
+    } else if (event.topic === 'email.staff_invitation') {
+      if (!mail.token || !mail.roleName || !mail.fullName)
+        throw new Error('Outbox staff invitation payload is invalid.');
+      await email.sendStaffInvitationEmail({
+        email: mail.email,
+        fullName: mail.fullName,
+        roleName: mail.roleName,
+        token: mail.token
+      });
     } else throw new Error(`Unsupported outbox topic: ${event.topic}`);
     await db
       .updateTable('outbox_events')

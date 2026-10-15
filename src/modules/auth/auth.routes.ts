@@ -7,6 +7,7 @@ import { validateBody } from '../../middleware/validate.middleware.js';
 import { createAuthController } from './auth.controller.js';
 import {
   emailSchema,
+  acceptStaffInvitationSchema,
   changePasswordSchema,
   loginSchema,
   mfaChallengeSchema,
@@ -39,6 +40,12 @@ export function createAuthRouter(
     rateLimit(loginRateLimitOptions(environment), redis),
     validateBody(loginSchema),
     controller.login
+  );
+  router.post(
+    '/auth/staff-invitations/accept',
+    rateLimit({ keyPrefix: 'staff-invitation-accept', limit: 5, windowMs: 15 * 60 * 1000 }, redis),
+    validateBody(acceptStaffInvitationSchema),
+    controller.acceptStaffInvitation
   );
   router.post(
     '/auth/mfa/challenge',

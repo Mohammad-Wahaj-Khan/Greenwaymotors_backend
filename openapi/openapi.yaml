@@ -276,6 +276,28 @@ paths:
           $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
+  /api/v1/auth/staff-invitations/accept:
+    post:
+      tags:
+        - Auth
+      operationId: acceptStaffInvitation
+      summary: Accept a staff invitation and set the account password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptStaffInvitationInput'
+      responses:
+        '201':
+          description: Invitation accepted and staff account activated.
+        '401':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
   /api/v1/auth/login:
     post:
       tags:
@@ -2489,7 +2511,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2534,7 +2556,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2553,7 +2575,7 @@ paths:
       tags:
         - Admin - Staff
       operationId: postApiV1AdminStaff
-      summary: Create internal staff account
+      summary: Invite an internal staff member
       description:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
@@ -2562,10 +2584,9 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/CreateStaffInvitationInput'
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2580,6 +2601,71 @@ paths:
         '404':
           $ref: '#/components/responses/Problem'
         '409':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/staff-invitations:
+    get:
+      tags:
+        - Admin - Staff
+      operationId: listStaffInvitations
+      summary: List staff invitations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/staff-invitations/{invitationId}/resend:
+    post:
+      tags:
+        - Admin - Staff
+      operationId: resendStaffInvitation
+      summary: Resend a staff invitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invitationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/staff-invitations/{invitationId}/revoke:
+    post:
+      tags:
+        - Admin - Staff
+      operationId: revokeStaffInvitation
+      summary: Revoke a staff invitation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invitationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
           $ref: '#/components/responses/Problem'
   /api/v1/admin/staff/{userId}:
     get:
@@ -2597,7 +2683,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2633,7 +2719,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2663,7 +2749,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2693,7 +2779,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2758,7 +2844,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2788,7 +2874,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2849,7 +2935,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2910,7 +2996,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -2971,7 +3057,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3032,7 +3118,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3093,7 +3179,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3154,7 +3240,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3215,7 +3301,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3276,7 +3362,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3337,7 +3423,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3398,7 +3484,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3459,7 +3545,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3520,7 +3606,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3581,7 +3667,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3786,7 +3872,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3816,7 +3902,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3848,7 +3934,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3884,7 +3970,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3913,7 +3999,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3950,7 +4036,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -3987,7 +4073,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4027,7 +4113,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4057,7 +4143,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4089,7 +4175,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4125,7 +4211,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4154,7 +4240,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4191,7 +4277,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4228,7 +4314,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4268,7 +4354,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4298,7 +4384,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4330,7 +4416,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4366,7 +4452,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4395,7 +4481,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4432,7 +4518,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4469,7 +4555,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4509,7 +4595,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4539,7 +4625,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4571,7 +4657,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4607,7 +4693,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4636,7 +4722,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4673,7 +4759,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4710,7 +4796,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4745,7 +4831,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4791,7 +4877,7 @@ paths:
                   maximum: 5
                   description: One star is the lowest rating; five stars is the highest.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '201':
           description: Rating recorded. Standard data envelope.
@@ -4823,7 +4909,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4852,7 +4938,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '204':
           description: Operation completed.
@@ -4887,7 +4973,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4917,7 +5003,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4949,7 +5035,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -4985,7 +5071,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5014,7 +5100,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '204':
           description: Operation completed.
@@ -5049,7 +5135,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5079,7 +5165,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5114,7 +5200,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5144,7 +5230,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5168,7 +5254,7 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5203,7 +5289,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5233,7 +5319,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5257,7 +5343,7 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5287,7 +5373,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5326,7 +5412,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5350,7 +5436,7 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5380,7 +5466,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5406,7 +5492,7 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5436,7 +5522,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5475,7 +5561,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5499,7 +5585,7 @@ paths:
         Authenticated endpoint. See the GreenWay Backend Master Specification for business rules; response data is
         returned in the standard data envelope.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5529,7 +5615,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5568,7 +5654,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5616,7 +5702,7 @@ paths:
                       minLength: 1
                       maxLength: 1000000
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5652,7 +5738,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5692,7 +5778,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5722,7 +5808,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5752,7 +5838,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5789,7 +5875,7 @@ paths:
               type: object
               additionalProperties: true
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5824,7 +5910,7 @@ paths:
           schema:
             type: string
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       responses:
         '200':
           description: Successful response. Standard data envelope.
@@ -5845,7 +5931,7 @@ paths:
       operationId: patchAdminCatalogMake
       summary: Update make catalog record
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -7255,6 +7341,45 @@ components:
               type: string
             user:
               $ref: '#/components/schemas/User'
+    CreateStaffInvitationInput:
+      type: object
+      required:
+        - email
+        - fullName
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        roleName:
+          type: string
+          enum:
+            - sales_agent
+            - content_manager
+            - inventory_manager
+            - sales_manager
+            - finance
+            - admin
+          default: sales_agent
+    AcceptStaffInvitationInput:
+      type: object
+      required:
+        - token
+        - newPassword
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 512
+        newPassword:
+          type: string
+          minLength: 10
+          maxLength: 256
     RegisterCustomerInput:
       type: object
       required:
