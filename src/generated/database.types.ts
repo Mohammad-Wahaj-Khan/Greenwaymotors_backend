@@ -81,6 +81,20 @@ export interface AuditLogs {
   ip_address: string | null;
 }
 
+export interface Advertisements {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  image_url: string;
+  is_published: Generated<boolean>;
+  name: string;
+  placement: string;
+  target_url: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string;
+  upload_intent_id: string;
+}
+
 export interface BodyTypes {
   id: Generated<number>;
   name: string;
@@ -662,6 +676,7 @@ export interface Vehicles {
 }
 
 export interface DB {
+  advertisements: Advertisements;
   audit_logs: AuditLogs;
   body_types: BodyTypes;
   cms_entries: CmsEntries;

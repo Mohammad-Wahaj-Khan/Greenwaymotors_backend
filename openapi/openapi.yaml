@@ -30,9 +30,11 @@ tags:
   - name: Admin - Content
   - name: Admin - Catalog
   - name: Admin - Vehicle Imports
+  - name: Admin - Advertisements
   - name: Customer Account
   - name: Notifications
   - name: Content
+  - name: Advertisements
 paths:
   /health/live:
     get:
@@ -5958,6 +5960,96 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
+  /api/v1/advertisements:
+    get:
+      tags:
+        - Content
+      operationId: listPublicAdvertisements
+      parameters:
+        - name: placement
+          in: query
+          schema:
+            type: string
+            enum: [home_inventory_rail, vehicle_catalog_rail]
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+  /api/v1/admin/advertisements:
+    get:
+      tags:
+        - Admin - Advertisements
+      operationId: adminListAdvertisements
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+    post:
+      tags:
+        - Admin - Advertisements
+      operationId: adminCreateAdvertisement
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, placement, uploadIntentId, targetUrl]
+              properties:
+                name: { type: string }
+                placement: { type: string, enum: [home_inventory_rail, vehicle_catalog_rail] }
+                uploadIntentId: { type: string, format: uuid }
+                targetUrl: { type: string }
+      responses:
+        '201':
+          $ref: '#/components/responses/Data'
+  /api/v1/admin/advertisements/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    patch:
+      tags:
+        - Admin - Advertisements
+      operationId: adminUpdateAdvertisement
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+    delete:
+      tags:
+        - Admin - Advertisements
+      operationId: adminDeleteAdvertisement
+      security:
+        - bearerAuth: []
+      responses:
+        '204': { description: Advertisement deleted. }
+  /api/v1/admin/advertisements/{id}/publish:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    post:
+      tags:
+        - Admin - Advertisements
+      operationId: adminPublishAdvertisement
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
+  /api/v1/admin/advertisements/{id}/unpublish:
+    parameters:
+      - $ref: '#/components/parameters/UuidId'
+    post:
+      tags:
+        - Admin - Advertisements
+      operationId: adminUnpublishAdvertisement
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Data'
 components:
   parameters:
     UuidId:
@@ -6062,6 +6154,15 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    AdvertisementCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, placement, targetUrl, uploadIntentId]
+      properties:
+        name: { type: string, maxLength: 160 }
+        placement: { type: string, enum: [home_inventory_rail, vehicle_catalog_rail] }
+        targetUrl: { type: string, maxLength: 2048 }
+        uploadIntentId: { type: string, format: uuid }
     CreateQuoteInput:
       type: object
       additionalProperties: false
@@ -7025,6 +7126,7 @@ components:
           type: string
           enum:
             - vehicle_media
+            - advertisement_media
         mimeType:
           type: string
           enum:

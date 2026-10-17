@@ -14,7 +14,7 @@ const mime = z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']);
 const maxUploadBytes = 100 * 1024 * 1024;
 const presignInput = z
   .strictObject({
-    purpose: z.literal('vehicle_media'),
+    purpose: z.enum(['vehicle_media', 'advertisement_media']),
     mimeType: mime,
     sizeBytes: z
       .number()
@@ -31,6 +31,11 @@ const mediaInput = z.strictObject({
   isPrimary: z.boolean().default(false),
   sortOrder: z.number().int().min(0).max(10000).default(0)
 });
+
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 function mediaDto(row: {
   id: string;
   type: string;
@@ -53,17 +58,26 @@ function mediaDto(row: {
   };
 }
 
+function assertUploadPermission(
+  permissions: ReadonlySet<string>,
+  purpose: 'vehicle_media' | 'advertisement_media'
+) {
+  const permission = purpose === 'advertisement_media' ? 'cms.manage' : 'vehicle.media.manage';
+  if (!permissions.has(permission)) throw forbiddenError();
+}
+
 export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage): Router {
   const router = Router();
-  router.post('/uploads/presign', requirePermission('vehicle.media.manage'), async (req, res) => {
+  router.post('/uploads/presign', async (req, res) => {
     const input = parseInput(presignInput, req.body);
+    assertUploadPermission(req.auth!.permissions, input.purpose);
     const extension = {
       'image/jpeg': 'jpg',
       'image/png': 'png',
       'image/webp': 'webp',
       'video/mp4': 'mp4'
     }[input.mimeType];
-    const key = `vehicle-media/${req.auth!.user.id}/${randomUUID()}.${extension}`;
+    const key = `${input.purpose === 'vehicle_media' ? 'vehicle-media' : 'advertisements'}/${req.auth!.user.id}/${randomUUID()}.${extension}`;
     const expiresAt = new Date(Date.now() + 15 * 60_000);
     const intent = await db
       .insertInto('upload_intents')
@@ -89,7 +103,6 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
   });
   router.put(
     '/uploads/:uploadIntentId/content',
-    requirePermission('vehicle.media.manage'),
     raw({ limit: maxUploadBytes, type: mime.options }),
     async (req, res) => {
       const uploadIntentId = parseUuid(req.params.uploadIntentId);
@@ -99,6 +112,10 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
         .where('id', '=', uploadIntentId)
         .executeTakeFirst();
       if (!intent) throw notFoundError;
+      assertUploadPermission(
+        req.auth!.permissions,
+        intent.purpose as 'vehicle_media' | 'advertisement_media'
+      );
       if (intent.created_by !== req.auth!.user.id) throw forbiddenError();
       if (intent.status !== 'pending') throw conflictError('Upload intent is no longer pending.');
       if (intent.expires_at <= new Date()) throw conflictError('Upload intent expired.');
@@ -115,7 +132,7 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
       res.status(204).end();
     }
   );
-  router.post('/uploads/complete', requirePermission('vehicle.media.manage'), async (req, res) => {
+  router.post('/uploads/complete', async (req, res) => {
     const input = parseInput(z.strictObject({ uploadIntentId: z.uuid() }), req.body);
     const intent = await db
       .selectFrom('upload_intents')
@@ -123,13 +140,29 @@ export function createUploadMediaRouter(db: Kysely<DB>, storage: ObjectStorage):
       .where('id', '=', input.uploadIntentId)
       .executeTakeFirst();
     if (!intent) throw notFoundError;
+    assertUploadPermission(
+      req.auth!.permissions,
+      intent.purpose as 'vehicle_media' | 'advertisement_media'
+    );
     if (intent.created_by !== req.auth!.user.id) throw forbiddenError();
     if (intent.status === 'completed') {
       sendData(res, { uploadIntentId: intent.id, completed: true });
       return;
     }
     if (intent.expires_at <= new Date()) throw conflictError('Upload intent expired.');
-    const object = await storage.head(intent.object_key, intent.mime_type);
+    // Cloudinary's upload response can be available just before its Admin API
+    // indexes the same asset. Retry the short verification window so a valid
+    // advertisement upload is not rejected with a transient 422.
+    let object = await storage.head(intent.object_key, intent.mime_type);
+    for (
+      let attempt = 0;
+      attempt < 4 &&
+      (object.mimeType !== intent.mime_type || object.sizeBytes !== Number(intent.size_bytes));
+      attempt += 1
+    ) {
+      await delay(200 * (attempt + 1));
+      object = await storage.head(intent.object_key, intent.mime_type);
+    }
     if (object.mimeType !== intent.mime_type || object.sizeBytes !== Number(intent.size_bytes))
       throw validationError('Uploaded object type or size differs from the authorized intent.');
     await db

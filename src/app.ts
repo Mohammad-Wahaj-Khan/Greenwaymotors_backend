@@ -46,6 +46,7 @@ import { createDashboardRouter } from './modules/admin/dashboard-reports.routes.
 import { createVehicleImportRouter } from './modules/admin/vehicle-import.routes.js';
 import { createVehicleWorkflowRouter } from './modules/admin/vehicle-workflow.routes.js';
 import { createCatalogAdminRouter } from './modules/admin/catalog.routes.js';
+import { createAdvertisementAdminRouter, createPublicAdvertisementRouter } from './modules/admin/advertisement.routes.js';
 
 export interface AppDependencies extends HealthDependencies {
   database: DatabaseConnection;
@@ -116,7 +117,8 @@ export function createApp(environment: Environment, dependencies: AppDependencie
     createDashboardRouter(dependencies.database.db),
     createVehicleImportRouter(dependencies.database.db),
     createVehicleWorkflowRouter(dependencies.database.db),
-    createCatalogAdminRouter(dependencies.database.db)
+    createCatalogAdminRouter(dependencies.database.db),
+    createAdvertisementAdminRouter(dependencies.database.db, dependencies.storage ?? createObjectStorage(environment))
   );
   app.use(
     '/api/v1/admin',
@@ -151,6 +153,7 @@ export function createApp(environment: Environment, dependencies: AppDependencie
     )
   );
   app.use('/api/v1/content', createPublicContentRouter(dependencies.database.db));
+  app.use('/api/v1', createPublicAdvertisementRouter(dependencies.database.db));
   app.use('/api/v1', createPublicRouter(dependencies.database));
   app.use(notFoundMiddleware);
   app.use(problemDetailsMiddleware);
